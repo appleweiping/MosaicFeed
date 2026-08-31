@@ -1,0 +1,9 @@
+[
+  {"user_id":"alex","article_id":"article-grid-basics","kind":"click","occurred_at":"2026-08-18T10:00:00Z","propensity":0.42},
+  {"user_id":"alex","article_id":"article-climate-map","kind":"like","occurred_at":"2026-08-23T15:00:00Z","propensity":0.35},
+  {"user_id":"alex","article_id":"article-ai-policy","kind":"hide","occurred_at":"2026-08-28T09:00:00Z","propensity":0.51},
+  {"user_id":"rin","article_id":"article-robot-lab","kind":"click","occurred_at":"2026-08-26T12:00:00Z","propensity":0.48},
+  {"user_id":"rin","article_id":"article-search-audit","kind":"like","occurred_at":"2026-08-29T13:00:00Z","propensity":0.39},
+  {"user_id":"rin","article_id":"article-feed-diversity","kind":"click","occurred_at":"2026-08-30T07:30:00Z","propensity":0.44},
+  {"user_id":"sam","article_id":"article-health-signals","kind":"view","occurred_at":"2026-08-27T14:00:00Z","propensity":0.64}
+]

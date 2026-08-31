@@ -1,0 +1,207 @@
+# MosaicFeed
+
+[![CI](https://github.com/appleweiping/MosaicFeed/actions/workflows/ci.yml/badge.svg)](https://github.com/appleweiping/MosaicFeed/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](https://www.python.org/)
+[![MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
+
+MosaicFeed is an explainable, diversity-aware laboratory for building and evaluating personalized content feeds. It turns timestamped views, clicks, likes, and hides into a decayed topic profile; scores every eligible article with inspectable evidence; and constructs a slate that balances relevance with topical novelty and source limits.
+
+Everything runs offline with the Python standard library. There are no API keys, model downloads, hidden network calls, or nondeterministic process hashes.
+
+![MosaicFeed example report](docs/demo.png)
+
+## Why it exists
+
+A useful feed is a slate, not a sorted column. A pure relevance ranking can repeat one topic or publisher, amplify already-popular items, leak future interactions into evaluation, and make debugging almost impossible. MosaicFeed keeps those decisions separate and visible:
+
+1. **Profile** — decay historical signals into signed topic preferences.
+2. **Score** — combine interest, freshness, quality, novelty, popularity, and controlled exploration.
+3. **Rerank** — apply maximal marginal relevance (MMR) and a hard per-source cap.
+4. **Evaluate** — replay temporal holdouts and report accuracy, diversity, coverage, exposure inequality, and logged-policy diagnostics.
+
+## Features
+
+- Time-aware implicit-feedback profiles with configurable event strengths and half-life.
+- Negative feedback from `hide` events instead of treating every interaction as positive.
+- Future-item and future-event exclusion at a caller-supplied point in time.
+- Decomposed score evidence and plain-language reasons for every recommendation.
+- Stable exploration based on SHA-256, reproducible across machines and processes.
+- MMR topical reranking plus hard source concentration limits.
+- Cold-start behavior that falls back to item-side quality, recency, and popularity.
+- Temporal leave-last-out evaluation with NDCG, hit rate, MRR, intra-list diversity, source diversity, catalog coverage, exposure Gini, and self-normalized IPS CTR.
+- Strict JSON/JSONL validation, CLI workflows, synthetic-data generation, and portable HTML reports.
+- Zero runtime dependencies and typed, immutable public models.
+
+## Quick start
+
+```bash
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+python -m pip install -e .
+
+mosaicfeed validate \
+  --articles examples/articles.json \
+  --events examples/events.json
+
+mosaicfeed recommend \
+  --articles examples/articles.json \
+  --events examples/events.json \
+  --user alex \
+  --as-of 2026-08-30T12:00:00Z \
+  --config examples/config.json \
+  --output feed.json \
+  --html feed.html
+```
+
+Each result includes its score decomposition:
+
+```json
+{
+  "article_id": "article-battery-reuse",
+  "rank": 1,
+  "score": 0.8221258513763996,
+  "breakdown": {
+    "interest": 0.8187297915466485,
+    "freshness": 0.8655365610061431,
+    "quality": 0.84,
+    "novelty": 1.0,
+    "popularity": 0.63,
+    "reasons": ["positive interests: climate, energy", "recently published"]
+  }
+}
+```
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[Article catalog] --> G[Point-in-time gate]
+    E[Timestamped events] --> G
+    G --> P[Decayed signed topic profile]
+    P --> S[Explainable candidate scorer]
+    A --> S
+    S --> M[MMR topic diversification]
+    M --> C[Hard source cap]
+    C --> F[Ranked feed + evidence]
+    F --> R[HTML/JSON report]
+    E --> H[Temporal holdout replay]
+    H --> P
+    F --> Q[Accuracy + diversity + exposure metrics]
+```
+
+| Module | Responsibility |
+|---|---|
+| `models` | Immutable articles, events, profiles, score evidence, and feeds |
+| `profile` | Event semantics, exponential decay, signed topic normalization |
+| `scoring` | Candidate eligibility and decomposed pointwise ranking |
+| `rerank` | Slate-level topic novelty and publisher constraints |
+| `pipeline` | One-call point-in-time feed generation |
+| `metrics` | Ranking, diversity, catalog, exposure, and IPS diagnostics |
+| `simulation` | Seeded local datasets for demos and smoke benchmarks |
+| `io` | Strict JSON/JSONL parsing and stable serialization |
+| `report` | Self-contained, script-free HTML review dashboard |
+| `cli` | Reproducible validation, recommendation, evaluation, and simulation |
+
+## Scoring
+
+The pre-reranking score is a normalized weighted sum:
+
+```text
+s = wi·interest + wf·freshness + wq·quality
+  + wn·novelty + wp·popularity + we·exploration
+```
+
+All components are bounded to `[0, 1]`; weights are non-negative and normalized by their sum. Freshness and interaction history use independent, configurable half-lives. Interest values preserve the effect of negative signals, then map signed preference to the score interval. Exploration is a small, stable per-user/per-article value—not global randomness.
+
+MMR then selects each next item using:
+
+```text
+λ · relevance − (1 − λ) · maximum_topic_similarity_to_selected
+```
+
+The hard `max_per_source` constraint is checked before each selection. A constrained feed may contain fewer than the requested size; MosaicFeed never silently relaxes the cap.
+
+## Offline evaluation
+
+```bash
+mosaicfeed evaluate \
+  --articles examples/articles.json \
+  --events examples/events.json \
+  --as-of 2026-08-30T12:00:00Z \
+  --config examples/config.json \
+  --k 5
+```
+
+For every user, the evaluator holds out the last click or like, trains only on strictly earlier events,
+exposes only articles already published at the holdout time, and attempts to recover the held-out item.
+Slate metrics use the top `k`, and catalog coverage uses the union of items temporally eligible at the
+evaluated holdouts. This is a diagnostic—not an online experiment or a causal claim. See
+[evaluation design](docs/evaluation.md) for metric definitions and interpretation.
+
+## Synthetic experiments
+
+Generate a deterministic local fixture without downloading a dataset:
+
+```bash
+mosaicfeed simulate --directory scratch --seed 41 --users 50 --articles 500
+mosaicfeed evaluate \
+  --articles scratch/articles.json \
+  --events scratch/events.json \
+  --as-of 2026-01-15T12:00:00Z
+```
+
+Synthetic interactions are intended for smoke tests and demonstrations. They do not establish real-world recommendation quality.
+
+## Python API
+
+```python
+from datetime import UTC, datetime
+
+from mosaicfeed import FeedConfig, build_feed
+from mosaicfeed.io import load_articles, load_events
+
+feed = build_feed(
+    "alex",
+    load_articles("examples/articles.json"),
+    load_events("examples/events.json"),
+    as_of=datetime(2026, 8, 30, 12, tzinfo=UTC),
+    config=FeedConfig(size=5, max_per_source=2),
+)
+```
+
+## Data contracts
+
+Dates must be ISO-8601 strings with explicit timezones. Article IDs must be unique. Unknown or duplicate
+object fields and non-finite JSON numbers are rejected to catch schema drift early. Events referencing a
+missing article are rejected by the `validate` command; the profile builder itself ignores unknown
+historical IDs so old logs can still be replayed against a pruned catalog.
+
+See [design and invariants](docs/design.md) for the complete point-in-time rules and [examples](examples/) for executable inputs.
+
+## Responsible use
+
+MosaicFeed is research and prototyping infrastructure, not a production policy. Item-side `quality` and `popularity` are caller-provided signals and can encode bias. Before deployment, define their provenance, measure exposure by relevant groups, add policy-specific safety constraints, validate latency and failure behavior, and run an online experiment with informed oversight. Explanations describe this ranker’s inputs; they are not causal explanations of user behavior.
+
+## Development
+
+```bash
+python -m pip install -e ".[dev]"
+ruff check .
+mypy src
+pytest --cov=mosaicfeed --cov-branch --cov-report=term-missing
+python -m build
+```
+
+The test suite covers model invariants, time leakage, negative feedback, deterministic scoring, constraint enforcement, metrics, strict I/O, CLI behavior, simulation, and report generation. CI runs the suite on Python 3.11, 3.12, and 3.13.
+
+## References
+
+- Carbonell, J. & Goldstein, J. (1998). *The use of MMR, diversity-based reranking for reordering documents and producing summaries.* SIGIR.
+- Järvelin, K. & Kekäläinen, J. (2002). *Cumulated gain-based evaluation of IR techniques.* ACM TOIS.
+- Swaminathan, A. & Joachims, T. (2015). *Counterfactual risk minimization: Learning from logged bandit feedback.* ICML.
+
+These citations identify standard algorithms and evaluation concepts. MosaicFeed’s package design, implementation, examples, and documentation were created for this repository.
+
+## License
+
+[MIT](LICENSE)

@@ -1,0 +1,15 @@
+{
+  "article_half_life_hours": 96.0,
+  "exclude_seen": true,
+  "exploration_weight": 0.02,
+  "freshness_weight": 0.2,
+  "interest_weight": 0.45,
+  "max_per_source": 2,
+  "minimum_score": 0.0,
+  "mmr_lambda": 0.76,
+  "novelty_weight": 0.08,
+  "popularity_weight": 0.1,
+  "profile_half_life_days": 45.0,
+  "quality_weight": 0.17,
+  "size": 5
+}
