@@ -77,9 +77,7 @@ def catalog_coverage(feeds: Iterable[Feed], catalog_size: int) -> float:
     if catalog_size < 0:
         raise ValueError("catalog_size must not be negative")
     exposed = {
-        recommendation.article_id
-        for feed in feeds
-        for recommendation in feed.recommendations
+        recommendation.article_id for feed in feeds for recommendation in feed.recommendations
     }
     if len(exposed) > catalog_size:
         raise ValueError("exposed article count exceeds catalog_size")
@@ -88,9 +86,7 @@ def catalog_coverage(feeds: Iterable[Feed], catalog_size: int) -> float:
 
 def exposure_gini(feeds: Iterable[Feed]) -> float:
     counts = Counter(
-        recommendation.article_id
-        for feed in feeds
-        for recommendation in feed.recommendations
+        recommendation.article_id for feed in feeds for recommendation in feed.recommendations
     )
     values = sorted(counts.values())
     if not values:
@@ -111,9 +107,7 @@ def self_normalized_ips(events: Iterable[Event]) -> float:
     if not observations:
         return 0.0
     minimum_propensity = min(propensity for _, propensity in observations)
-    normalized = [
-        (reward, minimum_propensity / propensity) for reward, propensity in observations
-    ]
+    normalized = [(reward, minimum_propensity / propensity) for reward, propensity in observations]
     weighted_rewards = math.fsum(reward * weight for reward, weight in normalized)
     total_weight = math.fsum(weight for _, weight in normalized)
     return weighted_rewards / total_weight
@@ -149,15 +143,65 @@ class EvaluationReport:
         }
 
 
-def evaluate_leave_last_out(
+@dataclass(frozen=True, slots=True)
+class UserEvaluation:
+    """Point-in-time result for one held-out positive interaction."""
+
+    user_id: str
+    holdout_article_id: str
+    holdout_at: datetime
+    ranked_ids: tuple[str, ...]
+    eligible_catalog_ids: frozenset[str]
+    ndcg: float
+    hit_rate: float
+    reciprocal_rank: float
+    intra_list_diversity: float
+    source_diversity: float
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationSamples:
+    """Per-user observations plus slate-wide diagnostics."""
+
+    users: tuple[UserEvaluation, ...]
+    users_skipped: int
+    k: int
+    catalog_coverage: float
+    exposure_gini: float
+    logged_ips_ctr: float
+    eligible_catalog_size: int
+
+    def report(self) -> EvaluationReport:
+        """Aggregate the retained observations into the stable public report."""
+
+        def mean(values: Iterable[float]) -> float:
+            items = tuple(values)
+            return math.fsum(items) / len(items) if items else 0.0
+
+        return EvaluationReport(
+            users_evaluated=len(self.users),
+            users_skipped=self.users_skipped,
+            k=self.k,
+            ndcg=mean(item.ndcg for item in self.users),
+            hit_rate=mean(item.hit_rate for item in self.users),
+            mean_reciprocal_rank=mean(item.reciprocal_rank for item in self.users),
+            intra_list_diversity=mean(item.intra_list_diversity for item in self.users),
+            source_diversity=mean(item.source_diversity for item in self.users),
+            catalog_coverage=self.catalog_coverage,
+            exposure_gini=self.exposure_gini,
+            logged_ips_ctr=self.logged_ips_ctr,
+        )
+
+
+def evaluate_leave_last_out_samples(
     articles: Sequence[Article],
     events: Sequence[Event],
     *,
     as_of: datetime,
     config: FeedConfig,
     k: int | None = None,
-) -> EvaluationReport:
-    """Evaluate each user on their last positive event at or before ``as_of``."""
+) -> EvaluationSamples:
+    """Retain per-user leave-last-out observations for statistical analysis."""
 
     if not isinstance(as_of, datetime) or as_of.tzinfo is None or as_of.utcoffset() is None:
         raise ValueError("as_of must be timezone-aware")
@@ -169,11 +213,7 @@ def evaluate_leave_last_out(
         raise ValueError("articles must have unique ids")
     user_ids = sorted({event.user_id for event in events if event.occurred_at <= as_of})
     feeds: list[Feed] = []
-    ndcg_values: list[float] = []
-    hits: list[float] = []
-    reciprocal_values: list[float] = []
-    ild_values: list[float] = []
-    source_values: list[float] = []
+    user_results: list[UserEvaluation] = []
     eligible_catalog_ids: set[str] = set()
     skipped = 0
 
@@ -193,8 +233,7 @@ def evaluate_leave_last_out(
         training = [
             event
             for event in events
-            if event.user_id == user_id
-            and event.occurred_at < holdout.occurred_at
+            if event.user_id == user_id and event.occurred_at < holdout.occurred_at
         ]
         available = [article for article in articles if article.published_at <= holdout.occurred_at]
         eligible_catalog_ids.update(article.id for article in available)
@@ -208,29 +247,46 @@ def evaluate_leave_last_out(
         ranked = [recommendation.article_id for recommendation in feed.recommendations]
         relevant = {holdout.article_id}
         feeds.append(Feed(feed.user_id, feed.generated_at, feed.recommendations[:cutoff]))
-        ndcg_values.append(ndcg_at_k(ranked, relevant, cutoff))
-        hits.append(hit_rate_at_k(ranked, relevant, cutoff))
-        reciprocal_values.append(reciprocal_rank(ranked, relevant, cutoff))
-        ild_values.append(intra_list_diversity(ranked[:cutoff], article_map))
-        source_values.append(source_diversity(ranked[:cutoff], article_map))
+        user_results.append(
+            UserEvaluation(
+                user_id=user_id,
+                holdout_article_id=holdout.article_id,
+                holdout_at=holdout.occurred_at,
+                ranked_ids=tuple(ranked[:cutoff]),
+                eligible_catalog_ids=frozenset(article.id for article in available),
+                ndcg=ndcg_at_k(ranked, relevant, cutoff),
+                hit_rate=hit_rate_at_k(ranked, relevant, cutoff),
+                reciprocal_rank=reciprocal_rank(ranked, relevant, cutoff),
+                intra_list_diversity=intra_list_diversity(ranked[:cutoff], article_map),
+                source_diversity=source_diversity(ranked[:cutoff], article_map),
+            )
+        )
 
-    evaluated = len(feeds)
-
-    def mean(values: Sequence[float]) -> float:
-        return sum(values) / len(values) if values else 0.0
-
-    return EvaluationReport(
-        users_evaluated=evaluated,
+    return EvaluationSamples(
+        users=tuple(user_results),
         users_skipped=skipped,
         k=cutoff,
-        ndcg=mean(ndcg_values),
-        hit_rate=mean(hits),
-        mean_reciprocal_rank=mean(reciprocal_values),
-        intra_list_diversity=mean(ild_values),
-        source_diversity=mean(source_values),
         catalog_coverage=catalog_coverage(feeds, len(eligible_catalog_ids)),
         exposure_gini=exposure_gini(feeds),
-        logged_ips_ctr=self_normalized_ips(
-            event for event in events if event.occurred_at <= as_of
-        ),
+        logged_ips_ctr=self_normalized_ips(event for event in events if event.occurred_at <= as_of),
+        eligible_catalog_size=len(eligible_catalog_ids),
     )
+
+
+def evaluate_leave_last_out(
+    articles: Sequence[Article],
+    events: Sequence[Event],
+    *,
+    as_of: datetime,
+    config: FeedConfig,
+    k: int | None = None,
+) -> EvaluationReport:
+    """Evaluate each user on their last positive event at or before ``as_of``."""
+
+    return evaluate_leave_last_out_samples(
+        articles,
+        events,
+        as_of=as_of,
+        config=config,
+        k=k,
+    ).report()

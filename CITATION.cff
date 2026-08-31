@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use MosaicFeed in research, please cite this software."
+title: "MosaicFeed: Explainable Time- and Diversity-Aware Feed Ranking"
+type: software
+authors:
+  - family-names: "Yan"
+    given-names: "Weiping"
+    alias: "appleweiping"
+version: 0.2.0
+date-released: 2026-08-31
+license: MIT
+repository-code: "https://github.com/appleweiping/MosaicFeed"
+url: "https://github.com/appleweiping/MosaicFeed"
+abstract: >-
+  An offline Python laboratory for time-aware personalized feed scoring,
+  diversity-constrained slate construction, and reproducible evaluation.

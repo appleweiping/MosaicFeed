@@ -10,11 +10,19 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.11"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -25,4 +33,9 @@ jobs:
       - run: ruff check .
       - run: mypy src
       - run: pytest --cov=mosaicfeed --cov-branch --cov-report=term-missing
+      - if: matrix.python-version == '3.11'
+        run: >-
+          mosaicfeed benchmark --articles examples/articles.json
+          --events examples/events.json --as-of 2026-08-30T12:00:00Z
+          --k 3 --bootstrap-samples 20 --output benchmark-smoke.json
       - run: python -m build

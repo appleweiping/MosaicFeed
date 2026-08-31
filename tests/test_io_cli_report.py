@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from mosaicfeed import __version__
 from mosaicfeed.cli import _article_record, _event_record, main
 from mosaicfeed.config import FeedConfig
 from mosaicfeed.io import (
@@ -62,6 +63,13 @@ def test_parse_datetime_accepts_z_and_rejects_bad_values() -> None:
         parse_datetime("not-a-date", "time")
     with pytest.raises(ValueError, match="timezone"):
         parse_datetime("2026-01-01T00:00:00", "time")
+
+
+def test_cli_version_uses_package_version(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        main(["--version"])
+    assert stopped.value.code == 0
+    assert capsys.readouterr().out == f"mosaicfeed {__version__}\n"
 
 
 def test_load_articles_json_and_jsonl(tmp_path: Path) -> None:

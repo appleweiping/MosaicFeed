@@ -2,7 +2,14 @@
 
 All notable changes are recorded here. The format follows Keep a Changelog and versions follow semantic versioning.
 
-## [Unreleased]
+## [0.2.0] - 2026-08-31
+
+### Added
+
+- Added paired policy benchmarks against unconstrained relevance, popularity, and recency baselines.
+- Added deterministic user-bootstrap confidence intervals, paired deltas, dataset fingerprints, and
+  portable JSON/HTML benchmark reports.
+- Added a strict, local-only MIND TSV adapter with explicit timestamp and metadata-loss declarations.
 
 ### Fixed
 

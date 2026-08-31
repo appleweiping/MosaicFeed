@@ -29,6 +29,7 @@ A useful feed is a slate, not a sorted column. A pure relevance ranking can repe
 - MMR topical reranking plus hard source concentration limits.
 - Cold-start behavior that falls back to item-side quality, recency, and popularity.
 - Temporal leave-last-out evaluation with NDCG, hit rate, MRR, intra-list diversity, source diversity, catalog coverage, exposure Gini, and self-normalized IPS CTR.
+- Paired policy benchmarks against popularity, recency, and unconstrained-relevance baselines with deterministic bootstrap confidence intervals.
 - Strict JSON/JSONL validation, CLI workflows, synthetic-data generation, and portable HTML reports.
 - Zero runtime dependencies and typed, immutable public models.
 
@@ -151,6 +152,49 @@ mosaicfeed evaluate \
 ```
 
 Synthetic interactions are intended for smoke tests and demonstrations. They do not establish real-world recommendation quality.
+
+## Policy benchmark
+
+Compare the configured policy against three declared baselines on exactly the same point-in-time holdouts:
+
+```bash
+mosaicfeed benchmark \
+  --articles examples/articles.json \
+  --events examples/events.json \
+  --as-of 2026-08-30T12:00:00Z \
+  --config examples/config.json \
+  --k 5 --bootstrap-samples 1000 --confidence 0.95 --seed 17 \
+  --output benchmark.json --html benchmark.html
+```
+
+The JSON records a SHA-256 fingerprint of all ranking-relevant input fields, aggregate policy metrics,
+percentile intervals for the five user-level metrics plus resampled catalog coverage and exposure Gini,
+paired MosaicFeed-minus-baseline intervals, and diagnostic runtime. Every policy uses the same user
+resample in each draw, including for the nonlinear slate-wide metrics. Bootstrap resampling is
+deterministic for a declared seed. A confidence interval is sampling uncertainty for this replay
+population; it does not remove selection bias or make the offline result causal. Logged IPS CTR remains
+a point diagnostic because the current report does not retain the per-user propensity log needed for a
+valid paired interval.
+
+## MIND dataset adapter
+
+MosaicFeed can convert locally obtained MIND `news.tsv` and `behaviors.tsv` files without downloading
+or redistributing the dataset:
+
+```bash
+mosaicfeed import-mind \
+  --news /data/MIND/news.tsv \
+  --behaviors /data/MIND/behaviors.tsv \
+  --catalog-published-at 2019-01-01T00:00:00Z \
+  --behavior-utc-offset -8 \
+  --directory scratch/mind
+```
+
+The explicit catalog time and UTC offset are required because MIND omits article publication times and
+stores behavior timestamps without a timezone. MIND also omits publisher identity, so the adapter uses
+news category as a source proxy. It converts clicked impressions into click events, while recording—but
+not pretending to timestamp—undated history entries. Obtain MIND from its official distributor and
+follow its license; no MIND data is included in this repository.
 
 ## Python API
 

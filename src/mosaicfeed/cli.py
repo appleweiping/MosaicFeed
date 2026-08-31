@@ -9,7 +9,10 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from mosaicfeed import __version__
+from mosaicfeed.benchmark import run_policy_benchmark, write_benchmark_html
 from mosaicfeed.config import FeedConfig
+from mosaicfeed.datasets import fixed_offset, load_mind
 from mosaicfeed.io import feed_to_dict, load_articles, load_events, parse_datetime, write_json
 from mosaicfeed.metrics import evaluate_leave_last_out
 from mosaicfeed.pipeline import build_feed
@@ -60,6 +63,7 @@ def _event_record(event: object) -> dict[str, object]:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mosaicfeed", description=__doc__)
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     validate = subcommands.add_parser("validate", help="strictly validate catalog and event files")
@@ -83,12 +87,44 @@ def _parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--k", type=int)
     evaluate.add_argument("--output")
 
+    benchmark = subcommands.add_parser(
+        "benchmark", help="compare MosaicFeed with declared point-in-time baselines"
+    )
+    benchmark.add_argument("--articles", required=True)
+    benchmark.add_argument("--events", required=True)
+    benchmark.add_argument("--as-of")
+    benchmark.add_argument("--config")
+    benchmark.add_argument("--k", type=int)
+    benchmark.add_argument("--bootstrap-samples", type=int, default=1_000)
+    benchmark.add_argument("--confidence", type=float, default=0.95)
+    benchmark.add_argument("--seed", type=int, default=17)
+    benchmark.add_argument("--output")
+    benchmark.add_argument("--html")
+
     simulate = subcommands.add_parser("simulate", help="create a reproducible synthetic dataset")
     simulate.add_argument("--directory", required=True)
     simulate.add_argument("--seed", type=int, default=17)
     simulate.add_argument("--users", type=int, default=20)
     simulate.add_argument("--articles", type=int, default=100)
     simulate.add_argument("--events-per-user", type=int, default=15)
+
+    mind = subcommands.add_parser(
+        "import-mind", help="convert local MIND TSV files without downloading data"
+    )
+    mind.add_argument("--news", required=True, help="path to MIND news.tsv")
+    mind.add_argument("--behaviors", required=True, help="path to MIND behaviors.tsv")
+    mind.add_argument(
+        "--catalog-published-at",
+        required=True,
+        help="declared ISO-8601 availability time because MIND omits publication times",
+    )
+    mind.add_argument(
+        "--behavior-utc-offset",
+        required=True,
+        type=float,
+        help="fixed UTC offset for MIND's timezone-naive behavior timestamps",
+    )
+    mind.add_argument("--directory", required=True)
     return parser
 
 
@@ -136,8 +172,27 @@ def _run(argv: Sequence[str] | None = None) -> int:
         else:
             print(json.dumps(evaluation_payload, indent=2, sort_keys=True))
         return 0
+    if args.command == "benchmark":
+        benchmark_report = run_policy_benchmark(
+            load_articles(args.articles),
+            load_events(args.events),
+            as_of=_clock(args.as_of),
+            config=_config(args.config),
+            k=args.k,
+            bootstrap_samples=args.bootstrap_samples,
+            confidence=args.confidence,
+            seed=args.seed,
+        )
+        benchmark_payload = benchmark_report.to_dict()
+        if args.output:
+            write_json(args.output, benchmark_payload)
+        else:
+            print(json.dumps(benchmark_payload, indent=2, sort_keys=True))
+        if args.html:
+            write_benchmark_html(args.html, benchmark_report)
+        return 0
     if args.command == "simulate":
-        dataset = generate_synthetic(
+        synthetic = generate_synthetic(
             seed=args.seed,
             users=args.users,
             articles=args.articles,
@@ -145,20 +200,60 @@ def _run(argv: Sequence[str] | None = None) -> int:
         )
         directory = Path(args.directory)
         directory.mkdir(parents=True, exist_ok=True)
-        article_records = [_article_record(article) for article in dataset.articles]
+        article_records = [_article_record(article) for article in synthetic.articles]
         write_json(directory / "articles.json", article_records)
-        write_json(directory / "events.json", [_event_record(event) for event in dataset.events])
+        write_json(
+            directory / "events.json",
+            [_event_record(event) for event in synthetic.events],
+        )
         write_json(
             directory / "metadata.json",
             {
-                "as_of": dataset.as_of.isoformat(),
+                "as_of": synthetic.as_of.isoformat(),
                 "seed": args.seed,
-                "users": list(dataset.user_ids),
+                "users": list(synthetic.user_ids),
             },
         )
         print(
-            f"wrote {len(dataset.articles)} articles and "
-            f"{len(dataset.events)} events to {directory}"
+            f"wrote {len(synthetic.articles)} articles and "
+            f"{len(synthetic.events)} events to {directory}"
+        )
+        return 0
+    if args.command == "import-mind":
+        mind_dataset = load_mind(
+            args.news,
+            args.behaviors,
+            catalog_published_at=parse_datetime(args.catalog_published_at, "catalog_published_at"),
+            behavior_timezone=fixed_offset(args.behavior_utc_offset),
+        )
+        directory = Path(args.directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        write_json(
+            directory / "articles.json",
+            [_article_record(article) for article in mind_dataset.articles],
+        )
+        write_json(
+            directory / "events.json",
+            [_event_record(event) for event in mind_dataset.events],
+        )
+        write_json(
+            directory / "metadata.json",
+            {
+                "adapter": "mind-tsv-v1",
+                "articles": len(mind_dataset.articles),
+                "click_events": len(mind_dataset.events),
+                "impressions": mind_dataset.impressions,
+                "ignored_history_items": mind_dataset.ignored_history_items,
+                "limitations": [
+                    "one caller-declared catalog availability time is used",
+                    "news category is used as a source proxy",
+                    "unclicked impressions and undated history are not preference events",
+                ],
+            },
+        )
+        print(
+            f"converted {len(mind_dataset.articles)} articles and "
+            f"{len(mind_dataset.events)} clicks to {directory}"
         )
         return 0
     raise AssertionError("unreachable command")
