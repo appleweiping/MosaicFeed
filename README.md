@@ -1,6 +1,7 @@
 # MosaicFeed
 
 [![CI](https://github.com/appleweiping/MosaicFeed/actions/workflows/ci.yml/badge.svg)](https://github.com/appleweiping/MosaicFeed/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/appleweiping/MosaicFeed/actions/workflows/codeql.yml/badge.svg)](https://github.com/appleweiping/MosaicFeed/actions/workflows/codeql.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
 

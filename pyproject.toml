@@ -24,6 +24,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = [
+  "bandit>=1.7",
   "build>=1.2",
   "mypy>=1.15",
   "pytest>=8.3",
@@ -68,3 +69,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 python_version = "3.11"
 strict = true
 files = ["src"]
+
+[tool.bandit]
+targets = ["src"]
+# B311: MosaicFeed seeds `random.Random(seed)` deliberately so bootstrap confidence
+# intervals, holdout sampling and the synthetic-catalog simulation are reproducible.
+# The package runs entirely offline on the standard library and has no cryptographic
+# surface; `secrets` would break the determinism the evaluations depend on.
+skips = ["B311"]
