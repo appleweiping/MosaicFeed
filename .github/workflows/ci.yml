@@ -51,6 +51,17 @@ jobs:
           uv run --locked mosaicfeed evaluate-mind --impressions examples/mind_impressions.json
           --scores examples/mind_scores.json --cutoff 1 --cutoff 2
           --output mind-evaluation-smoke.json
+      - if: matrix.python-version == '3.11'
+        name: Run learned click-model smoke test
+        shell: bash
+        run: |
+          uv run --locked mosaicfeed train-click-model \
+            --articles examples/articles.json --events examples/events.json \
+            --as-of 2026-08-30T12:00:00Z --epochs 3 --output click-model-smoke.json
+          uv run --locked mosaicfeed rank-click-model \
+            --model click-model-smoke.json --articles examples/articles.json \
+            --events examples/events.json --user alex \
+            --as-of 2026-08-30T12:00:00Z --k 3 --output click-ranking-smoke.json
       - run: uv run --locked python -m build --no-isolation
       - if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         name: Verify the wheel in a clean environment

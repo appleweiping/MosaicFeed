@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mosaicfeed"
-version = "0.3.0"
+version = "0.4.0"
 description = "An explainable, diversity-aware offline feed ranking laboratory"
 readme = "README.md"
 requires-python = ">=3.11"

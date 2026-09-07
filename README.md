@@ -31,6 +31,7 @@ A useful feed is a slate, not a sorted column. A pure relevance ranking can repe
 - Cold-start behavior that falls back to item-side quality, recency, and popularity.
 - Temporal leave-last-out evaluation with NDCG, hit rate, MRR, intra-list diversity, source diversity, catalog coverage, exposure Gini, and self-normalized IPS CTR.
 - Paired policy benchmarks against popularity, recency, and unconstrained-relevance baselines with deterministic bootstrap confidence intervals.
+- A fitted pointwise logistic click/like ranker whose training features are built only from each event's prior history, with strict portable model state.
 - Strict JSON/JSONL validation, CLI workflows, synthetic-data generation, and portable HTML reports.
 - Zero runtime dependencies and typed, immutable public models.
 
@@ -53,6 +54,20 @@ mosaicfeed recommend \
   --config examples/config.json \
   --output feed.json \
   --html feed.html
+
+mosaicfeed train-click-model \
+  --articles examples/articles.json \
+  --events examples/events.json \
+  --as-of 2026-08-30T12:00:00Z \
+  --output click-model.json
+
+mosaicfeed rank-click-model \
+  --model click-model.json \
+  --articles examples/articles.json \
+  --events examples/events.json \
+  --user alex \
+  --as-of 2026-08-30T12:00:00Z \
+  --k 5
 ```
 
 Each result includes its score decomposition:
@@ -89,6 +104,9 @@ flowchart LR
     E --> H[Temporal holdout replay]
     H --> P
     F --> Q[Accuracy + diversity + exposure metrics]
+    H --> L[Leakage-safe event-time features]
+    L --> T[Pointwise logistic trainer]
+    T --> U[Portable learned model]
 ```
 
 | Module | Responsibility |
@@ -99,6 +117,7 @@ flowchart LR
 | `rerank` | Slate-level topic novelty and publisher constraints |
 | `pipeline` | One-call point-in-time feed generation |
 | `metrics` | Ranking, diversity, catalog, exposure, and IPS diagnostics |
+| `learning` | Event-time feature construction, logistic training, persistence, and learned ranking |
 | `simulation` | Seeded local datasets for demos and smoke benchmarks |
 | `io` | Strict JSON/JSONL parsing and stable serialization |
 | `report` | Self-contained, script-free HTML review dashboard |
@@ -296,6 +315,24 @@ historical IDs so old logs can still be replayed against a pruned catalog.
 
 See [design and invariants](docs/design.md) for the complete point-in-time rules and [examples](examples/) for executable inputs.
 
+## Learned click model
+
+`PointwiseLogisticRanker` adds a real fitted ranking path while retaining the
+standard-library-only contract. For every training event it reconstructs the
+user profile from strictly earlier events, computes the same seven declared
+features (`bias`, interest, freshness, quality, novelty, popularity, and stable
+exploration), and performs seeded SGD with L2 regularization. Clicks and likes
+are positive labels; views and hides are negative labels.
+
+The model requires both label classes and rejects unknown articles, events that
+predate publication, future-only training sets, non-finite hyperparameters, and
+tampered state. Equal event timestamps use input order as an explicit tie rule.
+Its JSON state records the exact feature names, `FeedConfig`, training cutoff,
+class counts, hyperparameters, fitted weights, and a SHA-256 digest of the exact
+event-time feature/label matrix consumed by SGD. Because the event log does
+not necessarily contain complete candidate sets, this model is explicitly
+pointwise and does not claim a pairwise/listwise or causal objective.
+
 ## Responsible use
 
 MosaicFeed is research and prototyping infrastructure, not a production policy. Item-side `quality` and `popularity` are caller-provided signals and can encode bias. Before deployment, define their provenance, measure exposure by relevant groups, add policy-specific safety constraints, validate latency and failure behavior, and run an online experiment with informed oversight. Explanations describe this ranker’s inputs; they are not causal explanations of user behavior.
@@ -310,7 +347,10 @@ pytest --cov=mosaicfeed --cov-branch --cov-report=term-missing
 python -m build
 ```
 
-The test suite covers model invariants, time leakage, negative feedback, deterministic scoring, constraint enforcement, metrics, strict I/O, CLI behavior, simulation, and report generation. CI runs the suite on Python 3.11, 3.12, and 3.13.
+The test suite covers model invariants, event-time training leakage, learned-state
+tampering, hand-checkable label behavior, negative feedback, deterministic
+scoring, constraint enforcement, metrics, strict I/O, CLI behavior, simulation,
+and report generation. CI runs the suite on Python 3.11, 3.12, and 3.13.
 
 See [the release process](docs/releasing.md) for clean-install, SBOM, checksum,
 and build-provenance guarantees.

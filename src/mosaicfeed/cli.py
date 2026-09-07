@@ -14,6 +14,7 @@ from mosaicfeed.benchmark import run_policy_benchmark, write_benchmark_html
 from mosaicfeed.config import FeedConfig
 from mosaicfeed.datasets import fixed_offset, load_mind
 from mosaicfeed.io import feed_to_dict, load_articles, load_events, parse_datetime, write_json
+from mosaicfeed.learning import PointwiseLogisticRanker
 from mosaicfeed.metrics import evaluate_leave_last_out
 from mosaicfeed.mind import (
     evaluate_mind_impressions,
@@ -140,6 +141,32 @@ def _parser() -> argparse.ArgumentParser:
     mind_evaluate.add_argument("--scores", required=True)
     mind_evaluate.add_argument("--cutoff", action="append", type=int, dest="cutoffs")
     mind_evaluate.add_argument("--output")
+
+    train_click = subcommands.add_parser(
+        "train-click-model",
+        help="fit a leakage-safe pointwise logistic click model",
+    )
+    train_click.add_argument("--articles", required=True)
+    train_click.add_argument("--events", required=True)
+    train_click.add_argument("--as-of", required=True)
+    train_click.add_argument("--config")
+    train_click.add_argument("--output", required=True)
+    train_click.add_argument("--epochs", type=int, default=20)
+    train_click.add_argument("--learning-rate", type=float, default=0.05)
+    train_click.add_argument("--l2", type=float, default=0.001)
+    train_click.add_argument("--seed", type=int, default=17)
+
+    rank_click = subcommands.add_parser(
+        "rank-click-model",
+        help="rank a point-in-time catalog with a saved click model",
+    )
+    rank_click.add_argument("--model", required=True)
+    rank_click.add_argument("--articles", required=True)
+    rank_click.add_argument("--events", required=True)
+    rank_click.add_argument("--user", required=True)
+    rank_click.add_argument("--as-of", required=True)
+    rank_click.add_argument("--k", type=int, default=10)
+    rank_click.add_argument("--output")
     return parser
 
 
@@ -288,6 +315,50 @@ def _run(argv: Sequence[str] | None = None) -> int:
             cutoffs=(5, 10) if args.cutoffs is None else tuple(args.cutoffs),
         )
         payload = mind_report.to_dict()
+        if args.output:
+            write_json(args.output, payload)
+        else:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    if args.command == "train-click-model":
+        model = PointwiseLogisticRanker(
+            epochs=args.epochs,
+            learning_rate=args.learning_rate,
+            l2=args.l2,
+            seed=args.seed,
+        ).fit(
+            load_articles(args.articles),
+            load_events(args.events),
+            as_of=_clock(args.as_of),
+            config=_config(args.config),
+        )
+        model.save(args.output)
+        print(
+            json.dumps(
+                {
+                    "model": str(args.output),
+                    "training_examples": model.training_examples,
+                    "training_sha256": model.training_sha256,
+                    "weights": model.weights,
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+    if args.command == "rank-click-model":
+        model = PointwiseLogisticRanker.load(args.model)
+        predictions = model.rank_for_user(
+            args.user,
+            load_articles(args.articles),
+            load_events(args.events),
+            as_of=_clock(args.as_of),
+            k=args.k,
+        )
+        payload = {
+            "user_id": args.user,
+            "as_of": _clock(args.as_of).isoformat(),
+            "predictions": [prediction.to_dict() for prediction in predictions],
+        }
         if args.output:
             write_json(args.output, payload)
         else:

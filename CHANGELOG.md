@@ -6,6 +6,20 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.4.0] - 2026-09-07
+
+### Added
+
+- Added `PointwiseLogisticRanker`, a genuine fitted click/like probability
+  model with seven inspectable ranking features, seeded SGD, L2 regularization,
+  strict event-time leakage prevention, and stable candidate ranking.
+- Added versioned portable learned-model JSON with full feature/config/training
+  provenance, an exact training-example SHA-256 digest, and strict tamper
+  validation.
+- Added `train-click-model` and `rank-click-model` CLI workflows plus
+  deterministic, leakage, malformed-state, learning-behavior, and end-to-end
+  tests.
+
 ## [0.3.0] - 2026-09-07
 
 ### Added

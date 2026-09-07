@@ -8,6 +8,7 @@ from mosaicfeed.benchmark import (
 )
 from mosaicfeed.config import FeedConfig
 from mosaicfeed.datasets import MindCandidate, MindDataset, MindImpression, fixed_offset, load_mind
+from mosaicfeed.learning import ClickPrediction, PointwiseLogisticRanker
 from mosaicfeed.mind import MindEvaluationReport, evaluate_mind_impressions
 from mosaicfeed.models import Article, Event, EventKind, Feed, Recommendation, UserProfile
 from mosaicfeed.pipeline import build_feed
@@ -15,6 +16,7 @@ from mosaicfeed.pipeline import build_feed
 __all__ = [
     "Article",
     "BenchmarkReport",
+    "ClickPrediction",
     "ConfidenceInterval",
     "Event",
     "EventKind",
@@ -24,6 +26,7 @@ __all__ = [
     "MindDataset",
     "MindEvaluationReport",
     "MindImpression",
+    "PointwiseLogisticRanker",
     "Recommendation",
     "UserProfile",
     "bootstrap_mean",
@@ -34,4 +37,4 @@ __all__ = [
     "run_policy_benchmark",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

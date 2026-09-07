@@ -28,10 +28,24 @@ Source limits are hard constraints. If three publishers are available, `max_per_
 
 Exploration uses the first 64 bits of SHA-256 over `user_id`, a zero byte, and `article_id`. It does not depend on Python's randomized `hash()` and does not consume shared random state. Synthetic generation uses a private seeded `random.Random` instance.
 
+## Learned-model boundary
+
+The pointwise logistic trainer orders eligible events by timestamp and original
+input position. Each event is featurized before it is appended to that user's
+history, so its label cannot explain its own profile features. Events after the
+declared training cutoff are ignored; an event earlier than its article's
+publication time is rejected. A private seeded generator shuffles only the
+training-example indices and never changes process-global random state.
+
+The label contract is observable feedback, not causal relevance: click/like is
+one and view/hide is zero. The model therefore reports itself as pointwise. It
+does not infer counterfactual outcomes for candidates absent from the log.
+
 ## Deliberate non-goals
 
 - Online serving, streaming updates, and distributed indexes.
-- Learned embeddings or large-language-model inference.
+- Learned embeddings or large-language-model inference; the included learned
+  model is a small, inspectable linear logistic ranker.
 - Causal claims from observational interaction logs.
 - Automatically defining quality, safety, or fairness policy.
 - Relaxing constraints to fill every requested position.
