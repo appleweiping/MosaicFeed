@@ -23,11 +23,7 @@ def render_feed_report(
 
     source_count = len({articles[item.article_id].source for item in feed.recommendations})
     topic_count = len(
-        {
-            topic
-            for item in feed.recommendations
-            for topic in articles[item.article_id].topics
-        }
+        {topic for item in feed.recommendations for topic in articles[item.article_id].topics}
     )
     cards: list[str] = []
     for item in feed.recommendations:
@@ -45,9 +41,7 @@ def render_feed_report(
             for name, value in components
         )
         reasons = "".join(f"<li>{_escape(reason)}</li>" for reason in breakdown.reasons)
-        topics = "".join(
-            f'<span class="chip">{_escape(topic)}</span>' for topic in article.topics
-        )
+        topics = "".join(f'<span class="chip">{_escape(topic)}</span>' for topic in article.topics)
         cards.append(
             f"""
             <article class="card">
@@ -64,7 +58,10 @@ def render_feed_report(
             </article>
             """
         )
-    body = "".join(cards) or '<div class="empty">No eligible candidates met the configured constraints.</div>'
+    body = (
+        "".join(cards)
+        or '<div class="empty">No eligible candidates met the configured constraints.</div>'
+    )
     document = f"""<!doctype html>
 <html lang="en">
 <head>

@@ -58,9 +58,7 @@ def generate_synthetic(
                 summary=f"A synthetic briefing covering {first} and {second}.",
                 topics=topics,
                 source=SOURCES[index % len(SOURCES)],
-                published_at=clock
-                - timedelta(days=45)
-                + timedelta(hours=(index * 7) % (24 * 20)),
+                published_at=clock - timedelta(days=45) + timedelta(hours=(index * 7) % (24 * 20)),
                 quality=0.35 + 0.6 * rng.random(),
                 popularity=0.15 + 0.8 * rng.random(),
             )

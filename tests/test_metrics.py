@@ -146,18 +146,14 @@ def test_evaluate_leave_last_out_reports_all_metric_families(
 
 
 def test_evaluate_handles_no_users(articles: list[Article], now: datetime) -> None:
-    report = evaluate_leave_last_out(
-        articles, [], as_of=now, config=FeedConfig(size=2)
-    )
+    report = evaluate_leave_last_out(articles, [], as_of=now, config=FeedConfig(size=2))
     assert report.users_evaluated == 0
     assert report.ndcg == 0.0
 
 
 def test_evaluate_rejects_duplicate_catalog(articles: list[Article], now: datetime) -> None:
     with pytest.raises(ValueError, match="unique"):
-        evaluate_leave_last_out(
-            [articles[0], articles[0]], [], as_of=now, config=FeedConfig()
-        )
+        evaluate_leave_last_out([articles[0], articles[0]], [], as_of=now, config=FeedConfig())
 
 
 def test_evaluate_rejects_bad_k(articles: list[Article], now: datetime) -> None:
@@ -224,9 +220,7 @@ def test_evaluation_slate_metrics_use_top_k_and_holdout_eligible_catalog(
     assert report.catalog_coverage == pytest.approx(1 / 4)
 
 
-def test_evaluation_ips_excludes_events_after_as_of(
-    articles: list[Article], now: datetime
-) -> None:
+def test_evaluation_ips_excludes_events_after_as_of(articles: list[Article], now: datetime) -> None:
     report = evaluate_leave_last_out(
         articles,
         [

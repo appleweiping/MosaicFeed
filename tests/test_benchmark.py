@@ -132,10 +132,7 @@ def test_policy_benchmark_shares_each_user_resample_across_policies(
     )
 
     assert len(observed) == 7 * 4
-    assert all(
-        len(set(observed[start : start + 4])) == 1
-        for start in range(0, len(observed), 4)
-    )
+    assert all(len(set(observed[start : start + 4])) == 1 for start in range(0, len(observed), 4))
 
 
 def test_policy_benchmark_handles_no_evaluable_users(now: datetime) -> None:

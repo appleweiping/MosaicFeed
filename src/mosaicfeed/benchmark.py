@@ -129,13 +129,9 @@ def _resampled_metrics(samples: EvaluationSamples, indices: Sequence[int]) -> di
         article_id for index in indices for article_id in samples.users[index].ranked_ids
     )
     eligible_catalog = {
-        article_id
-        for index in indices
-        for article_id in samples.users[index].eligible_catalog_ids
+        article_id for index in indices for article_id in samples.users[index].eligible_catalog_ids
     }
-    result["catalog_coverage"] = (
-        len(exposures) / len(eligible_catalog) if eligible_catalog else 0.0
-    )
+    result["catalog_coverage"] = len(exposures) / len(eligible_catalog) if eligible_catalog else 0.0
     result["exposure_gini"] = _gini(tuple(exposures.values()))
     return result
 
@@ -337,14 +333,10 @@ def run_policy_benchmark(
         evaluations.append((name, samples, time.perf_counter() - started))
 
     expected_holdouts = tuple(
-        (item.user_id, item.holdout_article_id, item.holdout_at)
-        for item in evaluations[0][1].users
+        (item.user_id, item.holdout_article_id, item.holdout_at) for item in evaluations[0][1].users
     )
     if any(
-        tuple(
-            (item.user_id, item.holdout_article_id, item.holdout_at)
-            for item in sample.users
-        )
+        tuple((item.user_id, item.holdout_article_id, item.holdout_at) for item in sample.users)
         != expected_holdouts
         for _, sample, _ in evaluations
     ):
@@ -424,13 +416,13 @@ def render_benchmark_html(report: BenchmarkReport) -> str:
             "<tr>"
             f"<td>{html.escape(policy.name)}</td>"
             f"<td>{metrics.users_evaluated}</td>"
-            f'{metric_cell(policy, "ndcg", metrics.ndcg)}'
-            f'{metric_cell(policy, "hit_rate", metrics.hit_rate)}'
-            f'{metric_cell(policy, "reciprocal_rank", metrics.mean_reciprocal_rank)}'
-            f'{metric_cell(policy, "intra_list_diversity", metrics.intra_list_diversity)}'
-            f'{metric_cell(policy, "source_diversity", metrics.source_diversity)}'
-            f'{metric_cell(policy, "catalog_coverage", metrics.catalog_coverage)}'
-            f'{metric_cell(policy, "exposure_gini", metrics.exposure_gini)}'
+            f"{metric_cell(policy, 'ndcg', metrics.ndcg)}"
+            f"{metric_cell(policy, 'hit_rate', metrics.hit_rate)}"
+            f"{metric_cell(policy, 'reciprocal_rank', metrics.mean_reciprocal_rank)}"
+            f"{metric_cell(policy, 'intra_list_diversity', metrics.intra_list_diversity)}"
+            f"{metric_cell(policy, 'source_diversity', metrics.source_diversity)}"
+            f"{metric_cell(policy, 'catalog_coverage', metrics.catalog_coverage)}"
+            f"{metric_cell(policy, 'exposure_gini', metrics.exposure_gini)}"
             f"<td>{policy.elapsed_seconds:.4f}</td>"
             "</tr>"
         )

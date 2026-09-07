@@ -130,9 +130,7 @@ def test_json_input_rejects_duplicate_fields_and_non_finite_numbers(tmp_path: Pa
     huge_integer = tmp_path / "huge-integer.json"
     huge_integer.write_text(
         '[{"id":"a","title":"T","topics":["ai"],"source":"S",'
-        '"published_at":"2026-01-01T00:00:00Z","quality":'
-        + "9" * 400
-        + "}]",
+        '"published_at":"2026-01-01T00:00:00Z","quality":' + "9" * 400 + "}]",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="finite number"):
@@ -312,21 +310,24 @@ def test_cli_evaluate_stdout_and_file(tmp_path: Path, capsys: pytest.CaptureFixt
 
 def test_cli_simulate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     directory = tmp_path / "synthetic"
-    assert main(
-        [
-            "simulate",
-            "--directory",
-            str(directory),
-            "--seed",
-            "3",
-            "--users",
-            "2",
-            "--articles",
-            "5",
-            "--events-per-user",
-            "2",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "simulate",
+                "--directory",
+                str(directory),
+                "--seed",
+                "3",
+                "--users",
+                "2",
+                "--articles",
+                "5",
+                "--events-per-user",
+                "2",
+            ]
+        )
+        == 0
+    )
     assert "wrote 5 articles and 4 events" in capsys.readouterr().out
     assert len(load_articles(directory / "articles.json")) == 5
     assert len(load_events(directory / "events.json")) == 4

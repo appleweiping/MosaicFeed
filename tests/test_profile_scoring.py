@@ -147,9 +147,7 @@ def test_topic_interest_maps_signed_average() -> None:
     assert topic_interest(profile, []) == 0.0
 
 
-def test_score_article_is_decomposed_and_explained(
-    articles: list[Article], now: datetime
-) -> None:
+def test_score_article_is_decomposed_and_explained(articles: list[Article], now: datetime) -> None:
     profile = UserProfile("u", {"energy": 1.0}, event_count=1)
     score = score_article(articles[0], profile, as_of=now, config=FeedConfig())
     assert score.interest > 0.5
@@ -193,9 +191,7 @@ def test_scoring_requires_aware_clock(articles: list[Article]) -> None:
             config=FeedConfig(),
         )
     with pytest.raises(ValueError, match="timezone-aware"):
-        score_candidates(
-            [], UserProfile("u"), as_of=datetime(2026, 1, 1), config=FeedConfig()
-        )
+        score_candidates([], UserProfile("u"), as_of=datetime(2026, 1, 1), config=FeedConfig())
 
 
 def test_candidate_scoring_filters_seen_future_and_minimum(
@@ -238,9 +234,7 @@ def test_candidate_scoring_rejects_duplicate_filtered_items(
 ) -> None:
     future = Article("future", "Future", "", ("ai",), "S", now + timedelta(seconds=1))
     with pytest.raises(ValueError, match="duplicate"):
-        score_candidates(
-            [future, future], UserProfile("u"), as_of=now, config=FeedConfig()
-        )
+        score_candidates([future, future], UserProfile("u"), as_of=now, config=FeedConfig())
 
 
 def test_custom_weights_control_total(articles: list[Article], now: datetime) -> None:

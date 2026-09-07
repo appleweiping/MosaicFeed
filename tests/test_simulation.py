@@ -18,8 +18,7 @@ def test_synthetic_dataset_is_repeatable_and_isolated() -> None:
     assert len(first.user_ids) == 3
     article_map = {article.id: article for article in first.articles}
     assert all(
-        article_map[event.article_id].published_at <= event.occurred_at
-        for event in first.events
+        article_map[event.article_id].published_at <= event.occurred_at for event in first.events
     )
     assert all(event.occurred_at <= first.as_of for event in first.events)
 

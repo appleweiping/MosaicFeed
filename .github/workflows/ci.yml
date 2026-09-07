@@ -31,6 +31,7 @@ jobs:
           cache: pip
       - run: python -m pip install -e ".[dev]"
       - run: ruff check .
+      - run: ruff format --check .
       - run: mypy src
       - run: bandit -q -c pyproject.toml -r src
       - run: pytest --cov=mosaicfeed --cov-branch --cov-report=term-missing

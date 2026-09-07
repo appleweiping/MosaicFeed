@@ -72,9 +72,7 @@ def test_build_feed_returns_contiguous_ranked_items(
     assert all(item.article_id not in {"a1", "a3"} for item in feed.recommendations)
 
 
-def test_build_feed_default_config_and_cold_start(
-    articles: list[Article], now: datetime
-) -> None:
+def test_build_feed_default_config_and_cold_start(articles: list[Article], now: datetime) -> None:
     feed = build_feed("new", articles, [], as_of=now)
     assert len(feed.recommendations) == len(articles)
     assert all(item.breakdown.reasons for item in feed.recommendations)

@@ -184,7 +184,5 @@ def write_json(path: str | Path, value: object) -> None:
 
 
 def write_jsonl(path: str | Path, records: Iterable[dict[str, object]]) -> None:
-    body = "".join(
-        json.dumps(record, sort_keys=True, allow_nan=False) + "\n" for record in records
-    )
+    body = "".join(json.dumps(record, sort_keys=True, allow_nan=False) + "\n" for record in records)
     Path(path).write_text(body, encoding="utf-8", newline="\n")
