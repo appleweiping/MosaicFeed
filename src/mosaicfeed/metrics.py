@@ -7,8 +7,16 @@ from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from mosaicfeed.config import FeedConfig
+from mosaicfeed.logged import (
+    LoggedObservation,
+    LoggedPolicySummary,
+    collect_logged_observations,
+    self_normalized_estimate,
+    summarize_logged_policy,
+)
 from mosaicfeed.models import Article, Event, EventKind, Feed
 from mosaicfeed.pipeline import build_feed
 from mosaicfeed.rerank import topic_similarity
@@ -97,20 +105,14 @@ def exposure_gini(feeds: Iterable[Feed]) -> float:
 
 
 def self_normalized_ips(events: Iterable[Event]) -> float:
-    """Estimate click rate from logged events with known propensities."""
+    """Estimate click rate from logged events with known propensities.
 
-    observations = [
-        (float(event.kind in {EventKind.CLICK, EventKind.LIKE}), event.propensity)
-        for event in events
-        if event.propensity is not None
-    ]
-    if not observations:
-        return 0.0
-    minimum_propensity = min(propensity for _, propensity in observations)
-    normalized = [(reward, minimum_propensity / propensity) for reward, propensity in observations]
-    weighted_rewards = math.fsum(reward * weight for reward, weight in normalized)
-    total_weight = math.fsum(weight for _, weight in normalized)
-    return weighted_rewards / total_weight
+    Kept as the point estimate the report has always carried. The uncertainty
+    around it lives in `mosaicfeed.logged`, which needs the user each event
+    belongs to and so cannot be answered from a flat event list.
+    """
+
+    return self_normalized_estimate(collect_logged_observations(events))
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,8 +128,9 @@ class EvaluationReport:
     catalog_coverage: float
     exposure_gini: float
     logged_ips_ctr: float
+    logged_policy: LoggedPolicySummary | None = None
 
-    def to_dict(self) -> dict[str, int | float]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "users_evaluated": self.users_evaluated,
             "users_skipped": self.users_skipped,
@@ -140,6 +143,7 @@ class EvaluationReport:
             "catalog_coverage": self.catalog_coverage,
             "exposure_gini": self.exposure_gini,
             "logged_ips_ctr": self.logged_ips_ctr,
+            "logged_policy": self.logged_policy.to_dict() if self.logged_policy else None,
         }
 
 
@@ -170,6 +174,24 @@ class EvaluationSamples:
     exposure_gini: float
     logged_ips_ctr: float
     eligible_catalog_size: int
+    logged_observations: tuple[LoggedObservation, ...] = ()
+
+    def logged_policy(
+        self, *, confidence: float = 0.95, resamples: int = 1000, seed: int = 0
+    ) -> LoggedPolicySummary:
+        """Bound the logged-policy estimate by a bootstrap over users.
+
+        Retained here rather than computed during evaluation because the
+        resample count and confidence are the caller's to choose, and because
+        a thousand resamples of a large log is work a caller may not want.
+        """
+
+        return summarize_logged_policy(
+            self.logged_observations,
+            confidence=confidence,
+            resamples=resamples,
+            seed=seed,
+        )
 
     def report(self) -> EvaluationReport:
         """Aggregate the retained observations into the stable public report."""
@@ -190,6 +212,7 @@ class EvaluationSamples:
             catalog_coverage=self.catalog_coverage,
             exposure_gini=self.exposure_gini,
             logged_ips_ctr=self.logged_ips_ctr,
+            logged_policy=self.logged_policy() if self.logged_observations else None,
         )
 
 
@@ -262,14 +285,16 @@ def evaluate_leave_last_out_samples(
             )
         )
 
+    logged_events = [event for event in events if event.occurred_at <= as_of]
     return EvaluationSamples(
         users=tuple(user_results),
         users_skipped=skipped,
         k=cutoff,
         catalog_coverage=catalog_coverage(feeds, len(eligible_catalog_ids)),
         exposure_gini=exposure_gini(feeds),
-        logged_ips_ctr=self_normalized_ips(event for event in events if event.occurred_at <= as_of),
+        logged_ips_ctr=self_normalized_ips(logged_events),
         eligible_catalog_size=len(eligible_catalog_ids),
+        logged_observations=collect_logged_observations(logged_events),
     )
 
 
