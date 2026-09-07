@@ -6,8 +6,8 @@ authors:
   - family-names: "Yan"
     given-names: "Weiping"
     alias: "appleweiping"
-version: 0.2.0
-date-released: 2026-08-31
+version: 0.3.0
+date-released: 2026-09-07
 license: MIT
 repository-code: "https://github.com/appleweiping/MosaicFeed"
 url: "https://github.com/appleweiping/MosaicFeed"

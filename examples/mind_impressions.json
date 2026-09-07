@@ -1,0 +1,11 @@
+[
+  {
+    "candidates": [
+      {"article_id": "N1", "clicked": false},
+      {"article_id": "N2", "clicked": true}
+    ],
+    "impression_id": "synthetic-1",
+    "occurred_at": "2019-11-15T09:55:12-08:00",
+    "user_id": "synthetic-user"
+  }
+]

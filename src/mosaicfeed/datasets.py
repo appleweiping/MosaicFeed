@@ -2,12 +2,62 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
+from typing import Protocol
 
 from mosaicfeed.models import Article, Event, EventKind
+
+
+class _ByteDigest(Protocol):
+    def update(self, data: bytes, /) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class MindCandidate:
+    """One labeled candidate in a MIND impression, in source-file order."""
+
+    article_id: str
+    clicked: bool
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.article_id, str) or not self.article_id.strip():
+            raise ValueError("MIND candidate article_id must be a non-empty string")
+        if not isinstance(self.clicked, bool):
+            raise ValueError("MIND candidate clicked must be a boolean")
+
+
+@dataclass(frozen=True, slots=True)
+class MindImpression:
+    """A complete MIND candidate set retained for official-style evaluation."""
+
+    impression_id: str
+    user_id: str
+    occurred_at: datetime
+    candidates: tuple[MindCandidate, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.impression_id, str) or not self.impression_id.strip():
+            raise ValueError("MIND impression_id must be a non-empty string")
+        if not isinstance(self.user_id, str) or not self.user_id.strip():
+            raise ValueError("MIND impression user_id must be a non-empty string")
+        if (
+            not isinstance(self.occurred_at, datetime)
+            or self.occurred_at.tzinfo is None
+            or self.occurred_at.utcoffset() is None
+        ):
+            raise ValueError("MIND impression occurred_at must be timezone-aware")
+        if not isinstance(self.candidates, tuple) or not self.candidates:
+            raise ValueError("MIND impression candidates must be a non-empty tuple")
+        if not all(isinstance(candidate, MindCandidate) for candidate in self.candidates):
+            raise ValueError("MIND impression candidates must contain MindCandidate values")
+        article_ids = [candidate.article_id for candidate in self.candidates]
+        if len(article_ids) != len(set(article_ids)):
+            raise ValueError("MIND impression candidates must have unique article ids")
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +68,9 @@ class MindDataset:
     events: tuple[Event, ...]
     impressions: int
     ignored_history_items: int
+    impression_records: tuple[MindImpression, ...] = ()
+    news_sha256: str = ""
+    behaviors_sha256: str = ""
 
 
 def fixed_offset(hours: float) -> tzinfo:
@@ -45,13 +98,15 @@ def _mind_time(value: str, zone: tzinfo, *, line_number: int) -> datetime:
     return parsed.replace(tzinfo=zone)
 
 
-def _read_tsv(path: str | Path) -> list[tuple[int, list[str]]]:
-    source = Path(path)
-    rows: list[tuple[int, list[str]]] = []
-    for line_number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), start=1):
-        if line:
-            rows.append((line_number, line.split("\t")))
-    return rows
+def _iter_tsv(path: str | Path, digest: _ByteDigest) -> Iterator[tuple[int, list[str]]]:
+    """Stream and fingerprint the exact bytes supplied to the TSV parser."""
+
+    with Path(path).open("rb") as stream:
+        for line_number, raw_line in enumerate(stream, start=1):
+            digest.update(raw_line)
+            line = raw_line.decode("utf-8").rstrip("\r\n")
+            if line:
+                yield line_number, line.split("\t")
 
 
 def load_mind(
@@ -84,9 +139,10 @@ def load_mind(
     if zone_offset is None:
         raise ValueError("behavior_timezone must have a fixed UTC offset")
 
+    news_digest = hashlib.sha256()
     articles: list[Article] = []
     article_ids: set[str] = set()
-    for line_number, fields in _read_tsv(news_path):
+    for line_number, fields in _iter_tsv(news_path, news_digest):
         if len(fields) != 8:
             raise ValueError(f"MIND news line {line_number} must contain 8 tab-separated fields")
         (
@@ -119,9 +175,11 @@ def load_mind(
         )
 
     events: list[Event] = []
+    impression_records: list[MindImpression] = []
     impression_ids: set[str] = set()
     ignored_history_items = 0
-    for line_number, fields in _read_tsv(behaviors_path):
+    behaviors_digest = hashlib.sha256()
+    for line_number, fields in _iter_tsv(behaviors_path, behaviors_digest):
         if len(fields) != 5:
             raise ValueError(
                 f"MIND behavior line {line_number} must contain 5 tab-separated fields"
@@ -146,6 +204,7 @@ def load_mind(
         if not impression_tokens:
             raise ValueError(f"MIND impressions are empty on line {line_number}")
         seen_articles: set[str] = set()
+        candidates: list[MindCandidate] = []
         for impression in impression_tokens:
             article_id, separator, label = impression.rpartition("-")
             if not separator or not article_id or label not in {"0", "1"}:
@@ -161,12 +220,25 @@ def load_mind(
                     f"duplicate MIND impression article on line {line_number}: {article_id}"
                 )
             seen_articles.add(article_id)
-            if label == "1":
+            clicked = label == "1"
+            candidates.append(MindCandidate(article_id, clicked))
+            if clicked:
                 events.append(Event(user_id, article_id, EventKind.CLICK, occurred_at))
+        impression_records.append(
+            MindImpression(
+                impression_id=impression_id,
+                user_id=user_id,
+                occurred_at=occurred_at,
+                candidates=tuple(candidates),
+            )
+        )
 
     return MindDataset(
         articles=tuple(articles),
         events=tuple(events),
         impressions=len(impression_ids),
         ignored_history_items=ignored_history_items,
+        impression_records=tuple(impression_records),
+        news_sha256=news_digest.hexdigest(),
+        behaviors_sha256=behaviors_digest.hexdigest(),
     )

@@ -215,12 +215,9 @@ population; it does not remove selection bias or make the offline result causal.
 
 Logged IPS CTR now carries an interval of its own, from a bootstrap that resamples **users** and
 pools their observations. The sampling unit is the user because one user contributes many
-correlated events; resampling events instead treats a hundred impressions from one heavy user as
-a hundred independent observations. On a synthetic population of forty users with twenty-five
-events each, that mistake reports an interval 2.7 times too narrow when users differ in how often
-they click, and one that is too wide when they are behaviourally identical and differ only in the
-propensity they were logged at. The error has no fixed sign, which is why the wrong bootstrap is
-not worth having in either direction.
+correlated events; resampling events instead treats repeated impressions from one heavy user as
+independent observations. The committed synthetic regression demonstrates that event resampling
+can make the interval materially too narrow. It is not a valid substitute for cluster resampling.
 
 The estimator is self-normalized, so it is a ratio of two random sums rather than a mean, and each
 resample recomputes the whole ratio over the pooled observations. The report also carries Kish's
@@ -251,8 +248,27 @@ mosaicfeed import-mind \
 The explicit catalog time and UTC offset are required because MIND omits article publication times and
 stores behavior timestamps without a timezone. MIND also omits publisher identity, so the adapter uses
 news category as a source proxy. It converts clicked impressions into click events, while recording—but
-not pretending to timestamp—undated history entries. Obtain MIND from its official distributor and
-follow its license; no MIND data is included in this repository.
+not pretending to timestamp—undated history entries. The conversion also retains every impression's
+ordered candidate set and binary labels in `impressions.json`; source-file SHA-256 values are written to
+`metadata.json` together with the normalized catalog time and behavior UTC offset needed to replay the
+conversion.
+
+Scores in strict long-form JSON can then be evaluated without reconstructing lost non-click candidates:
+
+```bash
+mosaicfeed evaluate-mind \
+  --impressions scratch/mind/impressions.json \
+  --scores examples/mind_scores.json \
+  --cutoff 5 --cutoff 10 \
+  --output scratch/mind/evaluation.json
+```
+
+The report contains macro impression AUC, MRR and nDCG at the declared cutoffs, exact score-coverage
+validation, deterministic tie handling, and fingerprints of the normalized labels and scores. The formulas
+follow the public MIND evaluator; [the complete contract](docs/mind-evaluation.md) documents the one
+intentional clarification for tied scores, hand-calculated golden cases, and a fixed-seed 200-case
+independent cross-check. Obtain MIND from its
+official distributor and follow its research license; no MIND data is included in this repository.
 
 ## Python API
 
@@ -296,12 +312,16 @@ python -m build
 
 The test suite covers model invariants, time leakage, negative feedback, deterministic scoring, constraint enforcement, metrics, strict I/O, CLI behavior, simulation, and report generation. CI runs the suite on Python 3.11, 3.12, and 3.13.
 
+See [the release process](docs/releasing.md) for clean-install, SBOM, checksum,
+and build-provenance guarantees.
+
 ## References
 
 - Carbonell, J. & Goldstein, J. (1998). *The use of MMR, diversity-based reranking for reordering documents and producing summaries.* SIGIR.
 - Steck, H. (2018). *Calibrated recommendations.* RecSys.
 - Järvelin, K. & Kekäläinen, J. (2002). *Cumulated gain-based evaluation of IR techniques.* ACM TOIS.
 - Swaminathan, A. & Joachims, T. (2015). *Counterfactual risk minimization: Learning from logged bandit feedback.* ICML.
+- Wu, F. et al. (2020). *MIND: A large-scale dataset for news recommendation.* ACL.
 
 These citations identify standard algorithms and evaluation concepts. MosaicFeed’s package design, implementation, examples, and documentation were created for this repository.
 

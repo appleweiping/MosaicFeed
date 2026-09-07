@@ -11,3 +11,4 @@ build/
 *.egg-info/
 demo-feed.json
 demo-metrics.json
+.agent/

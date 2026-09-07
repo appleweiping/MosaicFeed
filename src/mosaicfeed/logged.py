@@ -9,14 +9,11 @@ The sampling unit is the user, not the event. One user contributes many
 correlated events, and resampling events would treat a hundred impressions from
 one heavy user as a hundred independent observations.
 
-The error that introduces does not have a fixed sign, which is the reason to
-avoid it rather than to correct for it. Measured on a synthetic population of
-forty users with twenty-five events each: when users differ in how often they
-click, as real users do, resampling events reports an interval 2.7 times too
-narrow; when users are behaviourally identical and differ only in the
-propensity they were logged at, it reports one that is too wide instead. A bare
-number invites caution and a confident wrong interval does not, so the wrong
-one is not worth having in either direction.
+The committed synthetic regression demonstrates the practical failure: when
+users differ in how often they click, resampling events reports a materially
+narrower interval than resampling whole users. A bare number invites caution
+and a confident interval based on a false independence assumption does not, so
+the event-level bootstrap is not offered.
 
 The estimator is self-normalized, which makes it a ratio of two random sums
 rather than a mean. A bootstrap resample therefore has to recompute the whole
@@ -266,10 +263,8 @@ def summarize_logged_policy(
 
     # The estimate is a ratio of two sums over the pooled observations, and a
     # sum over a pool of users is the sum of each user's own totals. Computing
-    # those once turns every resample from a walk over every observation into a
-    # walk over the users, which is what makes this affordable to run by
-    # default: fifty thousand observations from two thousand users went from
-    # thirty-two seconds to well under one.
+    # those once makes each resample proportional to the number of users rather
+    # than the number of observations.
     #
     # The weights carry a common factor of the smallest propensity, which
     # cancels in the ratio, so per-user totals computed against the global

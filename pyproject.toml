@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mosaicfeed"
-version = "0.2.0"
+version = "0.3.0"
 description = "An explainable, diversity-aware offline feed ranking laboratory"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,6 +30,7 @@ dev = [
   "pytest>=8.3",
   "pytest-cov>=6.0",
   "ruff>=0.11",
+  "hatchling>=1.27",
 ]
 
 [project.scripts]
@@ -39,6 +40,9 @@ mosaicfeed = "mosaicfeed.cli:main"
 Homepage = "https://github.com/appleweiping/MosaicFeed"
 Repository = "https://github.com/appleweiping/MosaicFeed"
 Issues = "https://github.com/appleweiping/MosaicFeed/issues"
+
+[tool.hatch.build]
+exclude = ["/.agent"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mosaicfeed"]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,6 +46,17 @@ def test_load_mind_preserves_declared_information_and_clicks(tmp_path: Path) -> 
     offset = dataset.events[0].occurred_at.utcoffset()
     assert offset is not None and offset.total_seconds() == -8 * 3_600
     assert dataset.ignored_history_items == 1
+    assert dataset.impressions == len(dataset.impression_records) == 1
+    impression = dataset.impression_records[0]
+    assert impression.impression_id == "1"
+    assert impression.user_id == "U1"
+    assert [(item.article_id, item.clicked) for item in impression.candidates] == [
+        ("N1", False),
+        ("N2", True),
+    ]
+    assert len(dataset.news_sha256) == len(dataset.behaviors_sha256) == 64
+    assert dataset.news_sha256 == hashlib.sha256(news.read_bytes()).hexdigest()
+    assert dataset.behaviors_sha256 == hashlib.sha256(behaviors.read_bytes()).hexdigest()
 
 
 @pytest.mark.parametrize("offset", [True, float("nan"), 15, 10**1_000, 0.0001])
@@ -128,5 +140,38 @@ def test_import_mind_cli_writes_auditable_conversion(tmp_path: Path) -> None:
     assert len(json.loads((output / "articles.json").read_text(encoding="utf-8"))) == 2
     assert len(json.loads((output / "events.json").read_text(encoding="utf-8"))) == 1
     metadata = json.loads((output / "metadata.json").read_text(encoding="utf-8"))
-    assert metadata["adapter"] == "mind-tsv-v1"
+    assert metadata["adapter"] == "mind-tsv-v2"
     assert len(metadata["limitations"]) == 3
+    assert len(metadata["news_sha256"]) == len(metadata["behaviors_sha256"]) == 64
+    assert metadata["catalog_published_at"] == "2019-01-01T00:00:00+00:00"
+    assert metadata["behavior_utc_offset_hours"] == -8.0
+    impressions = json.loads((output / "impressions.json").read_text(encoding="utf-8"))
+    assert impressions[0]["candidates"] == [
+        {"article_id": "N1", "clicked": False},
+        {"article_id": "N2", "clicked": True},
+    ]
+
+    second_output = tmp_path / "converted-with-other-assumptions"
+    assert (
+        main(
+            [
+                "import-mind",
+                "--news",
+                str(news),
+                "--behaviors",
+                str(behaviors),
+                "--catalog-published-at",
+                "2020-01-01T00:00:00Z",
+                "--behavior-utc-offset",
+                "2",
+                "--directory",
+                str(second_output),
+            ]
+        )
+        == 0
+    )
+    second_metadata = json.loads((second_output / "metadata.json").read_text(encoding="utf-8"))
+    assert second_metadata["news_sha256"] == metadata["news_sha256"]
+    assert second_metadata["behaviors_sha256"] == metadata["behaviors_sha256"]
+    assert second_metadata["catalog_published_at"] != metadata["catalog_published_at"]
+    assert second_metadata["behavior_utc_offset_hours"] != metadata["behavior_utc_offset_hours"]

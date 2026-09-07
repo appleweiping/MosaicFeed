@@ -15,6 +15,12 @@ from mosaicfeed.config import FeedConfig
 from mosaicfeed.datasets import fixed_offset, load_mind
 from mosaicfeed.io import feed_to_dict, load_articles, load_events, parse_datetime, write_json
 from mosaicfeed.metrics import evaluate_leave_last_out
+from mosaicfeed.mind import (
+    evaluate_mind_impressions,
+    load_mind_impressions,
+    load_mind_scores,
+    write_mind_impressions,
+)
 from mosaicfeed.pipeline import build_feed
 from mosaicfeed.report import render_feed_report
 from mosaicfeed.simulation import generate_synthetic
@@ -125,6 +131,15 @@ def _parser() -> argparse.ArgumentParser:
         help="fixed UTC offset for MIND's timezone-naive behavior timestamps",
     )
     mind.add_argument("--directory", required=True)
+
+    mind_evaluate = subcommands.add_parser(
+        "evaluate-mind",
+        help="evaluate scores against complete imported MIND candidate sets",
+    )
+    mind_evaluate.add_argument("--impressions", required=True)
+    mind_evaluate.add_argument("--scores", required=True)
+    mind_evaluate.add_argument("--cutoff", action="append", type=int, dest="cutoffs")
+    mind_evaluate.add_argument("--output")
     return parser
 
 
@@ -220,11 +235,16 @@ def _run(argv: Sequence[str] | None = None) -> int:
         )
         return 0
     if args.command == "import-mind":
+        catalog_published_at = parse_datetime(args.catalog_published_at, "catalog_published_at")
+        behavior_timezone = fixed_offset(args.behavior_utc_offset)
+        behavior_offset_hours = float(args.behavior_utc_offset)
+        if behavior_offset_hours == 0.0:
+            behavior_offset_hours = 0.0
         mind_dataset = load_mind(
             args.news,
             args.behaviors,
-            catalog_published_at=parse_datetime(args.catalog_published_at, "catalog_published_at"),
-            behavior_timezone=fixed_offset(args.behavior_utc_offset),
+            catalog_published_at=catalog_published_at,
+            behavior_timezone=behavior_timezone,
         )
         directory = Path(args.directory)
         directory.mkdir(parents=True, exist_ok=True)
@@ -236,18 +256,23 @@ def _run(argv: Sequence[str] | None = None) -> int:
             directory / "events.json",
             [_event_record(event) for event in mind_dataset.events],
         )
+        write_mind_impressions(directory / "impressions.json", mind_dataset.impression_records)
         write_json(
             directory / "metadata.json",
             {
-                "adapter": "mind-tsv-v1",
+                "adapter": "mind-tsv-v2",
                 "articles": len(mind_dataset.articles),
                 "click_events": len(mind_dataset.events),
                 "impressions": mind_dataset.impressions,
                 "ignored_history_items": mind_dataset.ignored_history_items,
+                "news_sha256": mind_dataset.news_sha256,
+                "behaviors_sha256": mind_dataset.behaviors_sha256,
+                "catalog_published_at": catalog_published_at.isoformat(),
+                "behavior_utc_offset_hours": behavior_offset_hours,
                 "limitations": [
                     "one caller-declared catalog availability time is used",
                     "news category is used as a source proxy",
-                    "unclicked impressions and undated history are not preference events",
+                    "undated history is counted but is not converted into preference events",
                 ],
             },
         )
@@ -255,6 +280,18 @@ def _run(argv: Sequence[str] | None = None) -> int:
             f"converted {len(mind_dataset.articles)} articles and "
             f"{len(mind_dataset.events)} clicks to {directory}"
         )
+        return 0
+    if args.command == "evaluate-mind":
+        mind_report = evaluate_mind_impressions(
+            load_mind_impressions(args.impressions),
+            load_mind_scores(args.scores),
+            cutoffs=(5, 10) if args.cutoffs is None else tuple(args.cutoffs),
+        )
+        payload = mind_report.to_dict()
+        if args.output:
+            write_json(args.output, payload)
+        else:
+            print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
     raise AssertionError("unreachable command")
 

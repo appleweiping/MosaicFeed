@@ -7,7 +7,8 @@ from mosaicfeed.benchmark import (
     run_policy_benchmark,
 )
 from mosaicfeed.config import FeedConfig
-from mosaicfeed.datasets import MindDataset, fixed_offset, load_mind
+from mosaicfeed.datasets import MindCandidate, MindDataset, MindImpression, fixed_offset, load_mind
+from mosaicfeed.mind import MindEvaluationReport, evaluate_mind_impressions
 from mosaicfeed.models import Article, Event, EventKind, Feed, Recommendation, UserProfile
 from mosaicfeed.pipeline import build_feed
 
@@ -19,14 +20,18 @@ __all__ = [
     "EventKind",
     "Feed",
     "FeedConfig",
+    "MindCandidate",
     "MindDataset",
+    "MindEvaluationReport",
+    "MindImpression",
     "Recommendation",
     "UserProfile",
     "bootstrap_mean",
     "build_feed",
+    "evaluate_mind_impressions",
     "fixed_offset",
     "load_mind",
     "run_policy_benchmark",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
