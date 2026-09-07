@@ -9,6 +9,14 @@ from typing import Any, cast
 
 from mosaicfeed.io import load_json_text
 
+# How a slate is assembled from scored candidates.
+#
+# "mmr" rewards a slate whose items are unlike each other. "calibrated"
+# rewards a slate whose topic proportions match the reader's own history.
+# They are different goals and can disagree, so the choice is explicit and
+# MMR stays the default.
+RERANK_STRATEGIES = ("mmr", "calibrated")
+
 
 def _is_finite_number(value: object) -> bool:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -31,6 +39,8 @@ class FeedConfig:
     article_half_life_hours: float = 72.0
     profile_half_life_days: float = 30.0
     mmr_lambda: float = 0.78
+    rerank_strategy: str = "mmr"
+    calibration_weight: float = 0.5
     max_per_source: int = 2
     minimum_score: float = 0.0
     exclude_seen: bool = True
@@ -53,6 +63,7 @@ class FeedConfig:
             "article_half_life_hours": self.article_half_life_hours,
             "profile_half_life_days": self.profile_half_life_days,
             "mmr_lambda": self.mmr_lambda,
+            "calibration_weight": self.calibration_weight,
             "minimum_score": self.minimum_score,
             "view_signal": self.view_signal,
             "click_signal": self.click_signal,
@@ -67,6 +78,12 @@ class FeedConfig:
             raise ValueError("half-lives must be positive")
         if not 0.0 <= self.mmr_lambda <= 1.0:
             raise ValueError("mmr_lambda must be between 0 and 1")
+        if self.rerank_strategy not in RERANK_STRATEGIES:
+            raise ValueError(
+                f"rerank_strategy must be one of {', '.join(sorted(RERANK_STRATEGIES))}"
+            )
+        if not 0.0 <= self.calibration_weight <= 1.0:
+            raise ValueError("calibration_weight must be between 0 and 1")
         if not 0.0 <= self.minimum_score <= 1.0:
             raise ValueError("minimum_score must be between 0 and 1")
         weights = self.ranking_weights()

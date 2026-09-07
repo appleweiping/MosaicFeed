@@ -123,6 +123,44 @@ MMR then selects each next item using:
 
 The hard `max_per_source` constraint is checked before each selection. A constrained feed may contain fewer than the requested size; MosaicFeed never silently relaxes the cap.
 
+### Calibrated slates
+
+MMR rewards a slate whose items are unlike *each other*. That is not the same as
+a slate that looks like the reader. Set `rerank_strategy` to `calibrated` to
+select against the gap between the reader's topic distribution and the slate's,
+following Steck (2018):
+
+```json
+{"rerank_strategy": "calibrated", "calibration_weight": 0.5}
+```
+
+The difference is not subtle. For a reader whose history is about four fifths
+one topic and one fifth another, over a corpus spanning five topics:
+
+| strategy | calibration KL | intra-list diversity | slate topic mix |
+|---|---:|---:|---|
+| `mmr` (default) | 0.362 | 0.667 | 60% politics, 10% each of culture, science, sports, tech |
+| `calibrated` | 0.000 | 0.356 | 80% politics, 20% sports |
+
+MMR reaches three topics the reader has **no history for at all**, and scores
+*higher* on intra-list diversity while doing it. That is the trade, and both
+numbers are reported so it can be reviewed rather than assumed: calibration is
+not a free improvement, it is a different objective.
+
+`calibration_error` measures the gap for any slate, whichever reranker built it,
+so the two strategies can be compared on the same footing. It is a smoothed KL
+divergence in nats, zero when the proportions match. The smoothing matters: a
+topic the slate misses entirely would otherwise be infinite, which says only
+"something is missing" and cannot rank two imperfect slates against each other.
+
+A reader's negative topic weights take no share of the distribution. They record
+what to push away, which is not the same as a proportion to serve.
+
+The hard `max_per_source` cap applies under either strategy, and neither is
+allowed to relax it. Asking for `calibrated` without a profile is refused rather
+than falling back to MMR, because the two build different slates and a silent
+substitution would leave nothing in the output to show which one ran.
+
 ## Offline evaluation
 
 ```bash
@@ -242,6 +280,7 @@ The test suite covers model invariants, time leakage, negative feedback, determi
 ## References
 
 - Carbonell, J. & Goldstein, J. (1998). *The use of MMR, diversity-based reranking for reordering documents and producing summaries.* SIGIR.
+- Steck, H. (2018). *Calibrated recommendations.* RecSys.
 - Järvelin, K. & Kekäläinen, J. (2002). *Cumulated gain-based evaluation of IR techniques.* ACM TOIS.
 - Swaminathan, A. & Joachims, T. (2015). *Counterfactual risk minimization: Learning from logged bandit feedback.* ICML.
 

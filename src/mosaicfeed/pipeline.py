@@ -35,7 +35,7 @@ def build_feed(
         config=active_config,
     )
     scores = score_candidates(article_list, profile, as_of=as_of, config=active_config)
-    chosen_ids = rerank(article_list, scores, config=active_config)
+    chosen_ids = rerank(article_list, scores, config=active_config, profile=profile)
     recommendations = tuple(
         Recommendation(
             article_id=article_id,
