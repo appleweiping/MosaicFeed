@@ -211,9 +211,28 @@ percentile intervals for the five user-level metrics plus resampled catalog cove
 paired MosaicFeed-minus-baseline intervals, and diagnostic runtime. Every policy uses the same user
 resample in each draw, including for the nonlinear slate-wide metrics. Bootstrap resampling is
 deterministic for a declared seed. A confidence interval is sampling uncertainty for this replay
-population; it does not remove selection bias or make the offline result causal. Logged IPS CTR remains
-a point diagnostic because the current report does not retain the per-user propensity log needed for a
-valid paired interval.
+population; it does not remove selection bias or make the offline result causal.
+
+Logged IPS CTR now carries an interval of its own, from a bootstrap that resamples **users** and
+pools their observations. The sampling unit is the user because one user contributes many
+correlated events; resampling events instead treats a hundred impressions from one heavy user as
+a hundred independent observations. On a synthetic population of forty users with twenty-five
+events each, that mistake reports an interval 2.7 times too narrow when users differ in how often
+they click, and one that is too wide when they are behaviourally identical and differ only in the
+propensity they were logged at. The error has no fixed sign, which is why the wrong bootstrap is
+not worth having in either direction.
+
+The estimator is self-normalized, so it is a ratio of two random sums rather than a mean, and each
+resample recomputes the whole ratio over the pooled observations. The report also carries Kish's
+effective sample size and the share of total weight carried by the single heaviest observation,
+because a self-normalized estimate can rest almost entirely on a handful of observations when the
+logging propensities were small. Below a tenth of the observations the summary marks itself
+`concentrated`.
+
+An interval is withheld, with a stated reason rather than a silent zero, when fewer than three
+users carry a propensity: a bootstrap over one cluster resamples the same cluster every time and
+reports zero width, which reads as certainty rather than as having one user. None of this makes
+the result causal, and none of it corrects a propensity model that was wrong.
 
 ## MIND dataset adapter
 

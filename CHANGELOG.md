@@ -6,6 +6,32 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 ### Added
 
+- A confidence interval for the logged-policy IPS estimate, which the README previously recorded
+  as impossible because the report did not retain the per-user propensity log. It does now.
+- The bootstrap resamples users and pools their observations, because one user contributes many
+  correlated events. Measured on a synthetic population of forty users with twenty-five events
+  each, resampling events instead reports an interval 2.7 times too narrow when users differ in
+  how often they click, and one that is too wide when they differ only in logged propensity. The
+  error has no fixed sign, so the wrong bootstrap is not conservative, merely wrong.
+- Kish's effective sample size and the share of total weight on the single heaviest observation,
+  since a self-normalized estimate can rest almost entirely on a few observations when the
+  logging propensities were small. Below a tenth of the observations the summary marks itself
+  concentrated.
+- An interval is withheld with a stated reason, rather than reported as zero width, when fewer
+  than three users carry a propensity. A bootstrap over one cluster resamples the same cluster
+  every time.
+- `mosaicfeed.logged` as a Python API: `summarize_logged_policy`, `collect_logged_observations`,
+  `self_normalized_estimate`, `effective_sample_size`, and `largest_weight_share`.
+
+### Changed
+
+- Resampling walks per-user totals rather than every observation. The estimate is a ratio of two
+  sums, and a sum over a pool of users is the sum of each user's own totals, so the results are
+  identical to floating point while fifty thousand observations from two thousand users fell from
+  thirty-five seconds to under two.
+
+### Added
+
 - Calibrated slate construction, following Steck (2018). `rerank_strategy: "calibrated"`
   selects against the gap between the reader's topic distribution and the slate's, rather
   than against similarity between the slate's own items. `calibration_error` reports that
