@@ -4,26 +4,54 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from mosaicfeed import __version__
-from mosaicfeed.benchmark import run_policy_benchmark, write_benchmark_html
+from mosaicfeed.benchmark import render_benchmark_html, run_policy_benchmark
 from mosaicfeed.config import FeedConfig
 from mosaicfeed.datasets import fixed_offset, load_mind
-from mosaicfeed.io import feed_to_dict, load_articles, load_events, parse_datetime, write_json
+from mosaicfeed.event_stream import (
+    EventStreamLimits,
+    ProfileEventStore,
+    load_event_store,
+    load_interaction_events,
+    profile_to_dict,
+)
+from mosaicfeed.io import (
+    atomic_write_texts,
+    feed_to_dict,
+    json_text,
+    load_articles,
+    load_events,
+    load_json_text,
+    parse_datetime,
+    write_json,
+)
 from mosaicfeed.learning import PointwiseLogisticRanker
 from mosaicfeed.metrics import evaluate_leave_last_out
 from mosaicfeed.mind import (
     evaluate_mind_impressions,
+    impression_to_dict,
     load_mind_impressions,
     load_mind_scores,
-    write_mind_impressions,
 )
 from mosaicfeed.pipeline import build_feed
-from mosaicfeed.report import render_feed_report
+from mosaicfeed.report import render_feed_html
+from mosaicfeed.server import (
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    ServingLimits,
+    create_rank_server,
+    load_click_rank_service,
+    resolve_bearer_token,
+    serve_rank_server,
+)
 from mosaicfeed.simulation import generate_synthetic
 
 
@@ -31,8 +59,22 @@ def _clock(value: str | None) -> datetime:
     return datetime.now(UTC) if value is None else parse_datetime(value, "as_of")
 
 
-def _config(path: str | None) -> FeedConfig:
-    return FeedConfig() if path is None else FeedConfig.from_json(path)
+def _config(path: str | None, *, maximum_bytes: int | None = None) -> FeedConfig:
+    if path is None:
+        return FeedConfig()
+    if maximum_bytes is None:
+        return FeedConfig.from_json(path)
+    with Path(path).open("rb") as source:
+        data = source.read(maximum_bytes + 1)
+    if len(data) > maximum_bytes:
+        raise ValueError("configuration exceeds max_config_bytes")
+    try:
+        payload = load_json_text(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+        raise ValueError("configuration must be strict UTF-8 JSON") from error
+    if not isinstance(payload, dict):
+        raise ValueError("configuration must be a JSON object")
+    return FeedConfig.from_mapping(cast(dict[str, object], payload))
 
 
 def _article_record(article: object) -> dict[str, object]:
@@ -65,7 +107,114 @@ def _event_record(event: object) -> dict[str, object]:
     }
     if event.propensity is not None:
         result["propensity"] = event.propensity
+    if event.weight != 1.0:
+        result["weight"] = event.weight
     return result
+
+
+def _add_event_stream_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--articles", required=True)
+    parser.add_argument("--log", required=True)
+    parser.add_argument("--config")
+    parser.add_argument("--allowed-lateness-seconds", type=float, default=300.0)
+    parser.add_argument(
+        "--late-event-policy",
+        choices=("reject", "accept-rebuild"),
+        default="reject",
+    )
+    parser.add_argument(
+        "--recover-torn-tail",
+        action="store_true",
+        help="discard an incomplete final log record after validating every complete record",
+    )
+    parser.add_argument("--max-event-bytes", type=int, default=16 * 1024)
+    parser.add_argument("--max-input-bytes", type=int, default=64 * 1024 * 1024)
+    parser.add_argument("--max-batch-events", type=int, default=10_000)
+    parser.add_argument("--max-log-bytes", type=int, default=256 * 1024 * 1024)
+    parser.add_argument("--max-checkpoint-bytes", type=int, default=256 * 1024 * 1024)
+    parser.add_argument("--max-state-bytes", type=int, default=192 * 1024 * 1024)
+    parser.add_argument("--max-events", type=int, default=1_000_000)
+    parser.add_argument("--max-users", type=int, default=100_000)
+    parser.add_argument("--max-events-per-user", type=int, default=100_000)
+    parser.add_argument("--max-catalog-articles", type=int, default=100_000)
+    parser.add_argument("--max-catalog-bytes", type=int, default=64 * 1024 * 1024)
+    parser.add_argument("--max-config-bytes", type=int, default=64 * 1024)
+    parser.add_argument("--max-topics-per-article", type=int, default=1_024)
+    parser.add_argument("--max-catalog-topic-cells", type=int, default=2_000_000)
+    parser.add_argument("--max-profile-topic-cells", type=int, default=2_000_000)
+    parser.add_argument("--max-identifier-chars", type=int, default=256)
+    parser.add_argument("--max-weight", type=float, default=100.0)
+
+
+def _event_stream_limits(args: argparse.Namespace) -> EventStreamLimits:
+    return EventStreamLimits(
+        max_event_bytes=args.max_event_bytes,
+        max_input_bytes=args.max_input_bytes,
+        max_batch_events=args.max_batch_events,
+        max_log_bytes=args.max_log_bytes,
+        max_checkpoint_bytes=args.max_checkpoint_bytes,
+        max_state_bytes=args.max_state_bytes,
+        max_events=args.max_events,
+        max_users=args.max_users,
+        max_events_per_user=args.max_events_per_user,
+        max_catalog_articles=args.max_catalog_articles,
+        max_catalog_bytes=args.max_catalog_bytes,
+        max_config_bytes=args.max_config_bytes,
+        max_topics_per_article=args.max_topics_per_article,
+        max_catalog_topic_cells=args.max_catalog_topic_cells,
+        max_profile_topic_cells=args.max_profile_topic_cells,
+        max_identifier_chars=args.max_identifier_chars,
+        max_weight=args.max_weight,
+    )
+
+
+def _open_event_store(
+    args: argparse.Namespace,
+    *,
+    checkpoint: str | Path | None,
+) -> ProfileEventStore:
+    limits = _event_stream_limits(args)
+    return load_event_store(
+        args.log,
+        args.articles,
+        config=_config(args.config, maximum_bytes=limits.max_config_bytes),
+        limits=limits,
+        allowed_lateness_seconds=args.allowed_lateness_seconds,
+        late_event_policy=args.late_event_policy,
+        checkpoint_path=checkpoint,
+        recover_torn_tail=args.recover_torn_tail,
+    )
+
+
+def _emit_json(value: object, output: str | None) -> None:
+    if output:
+        write_json(output, value)
+    else:
+        print(json.dumps(value, indent=2, sort_keys=True, allow_nan=False))
+
+
+def _require_distinct_paths(
+    values: dict[str, str | None],
+    *,
+    allowed_equal: frozenset[frozenset[str]] = frozenset(),
+) -> None:
+    paths = {name: Path(value) for name, value in values.items() if value is not None}
+    resolved = {name: path.resolve() for name, path in paths.items()}
+    names = tuple(paths)
+    for index, left in enumerate(names):
+        for right in names[index + 1 :]:
+            pair = frozenset({left, right})
+            if pair in allowed_equal:
+                continue
+            same_file = False
+            with suppress(OSError):
+                same_file = (
+                    paths[left].exists()
+                    and paths[right].exists()
+                    and os.path.samefile(paths[left], paths[right])
+                )
+            if resolved[left] == resolved[right] or same_file:
+                raise ValueError(f"--{left} and --{right} must refer to different paths")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -167,6 +316,74 @@ def _parser() -> argparse.ArgumentParser:
     rank_click.add_argument("--as-of", required=True)
     rank_click.add_argument("--k", type=int, default=10)
     rank_click.add_argument("--output")
+
+    serve_click = subcommands.add_parser(
+        "serve-click-model",
+        help="serve a bounded local HTTP API from a saved click model",
+    )
+    serve_click.add_argument("--model", required=True)
+    serve_click.add_argument("--articles", required=True)
+    serve_click.add_argument("--events", required=True)
+    serve_click.add_argument("--host", default=DEFAULT_HOST)
+    serve_click.add_argument("--port", type=int, default=DEFAULT_PORT)
+    serve_click.add_argument(
+        "--token-env",
+        help="name of the environment variable containing the optional bearer token",
+    )
+    serve_click.add_argument(
+        "--allow-nonloopback",
+        action="store_true",
+        help="explicitly allow a non-loopback host (also requires --token-env)",
+    )
+    serve_click.add_argument("--max-request-bytes", type=int, default=64 * 1024)
+    serve_click.add_argument("--max-response-bytes", type=int, default=2 * 1024 * 1024)
+    serve_click.add_argument("--max-k", type=int, default=100)
+    serve_click.add_argument("--max-candidates", type=int, default=10_000)
+    serve_click.add_argument("--max-catalog-articles", type=int, default=100_000)
+    serve_click.add_argument("--max-history-events", type=int, default=1_000_000)
+    serve_click.add_argument("--max-model-bytes", type=int, default=4 * 1024 * 1024)
+    serve_click.add_argument("--max-catalog-bytes", type=int, default=64 * 1024 * 1024)
+    serve_click.add_argument("--max-history-bytes", type=int, default=128 * 1024 * 1024)
+    serve_click.add_argument("--max-topics-per-article", type=int, default=1_024)
+    serve_click.add_argument("--max-catalog-topic-cells", type=int, default=2_000_000)
+    serve_click.add_argument("--max-concurrency", type=int, default=16)
+    serve_click.add_argument("--request-timeout-seconds", type=float, default=10.0)
+    serve_click.add_argument("--max-identifier-chars", type=int, default=256)
+    serve_click.add_argument("--max-event-weight", type=float, default=100.0)
+
+    stream_ingest = subcommands.add_parser(
+        "stream-ingest",
+        help="validate and append one versioned interaction JSONL batch",
+    )
+    _add_event_stream_options(stream_ingest)
+    stream_ingest.add_argument("--input", required=True)
+    stream_ingest.add_argument(
+        "--checkpoint",
+        help="restore this checkpoint when present, then atomically refresh it",
+    )
+    stream_ingest.add_argument("--output")
+
+    stream_checkpoint = subcommands.add_parser(
+        "stream-checkpoint",
+        help="validate/replay a log and atomically write a checksummed checkpoint",
+    )
+    _add_event_stream_options(stream_checkpoint)
+    stream_checkpoint.add_argument("--checkpoint", help="optional existing checkpoint to resume")
+    stream_checkpoint.add_argument("--output", required=True, help="destination checkpoint")
+
+    stream_replay = subcommands.add_parser(
+        "stream-replay",
+        help="replay a consistent log prefix into point-in-time user profiles",
+    )
+    _add_event_stream_options(stream_replay)
+    stream_replay.add_argument("--checkpoint", help="optional checkpoint to resume")
+    stream_replay.add_argument("--as-of", required=True)
+    stream_replay.add_argument("--user", action="append", dest="users")
+    stream_replay.add_argument("--output")
+    stream_replay.add_argument(
+        "--events-output",
+        help="write a frozen legacy history snapshot for training or HTTP serving",
+    )
     return parser
 
 
@@ -182,6 +399,15 @@ def _run(argv: Sequence[str] | None = None) -> int:
         print(json.dumps({"articles": len(articles), "events": len(events), "valid": True}))
         return 0
     if args.command == "recommend":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "config": args.config,
+                "events": args.events,
+                "html": args.html,
+                "output": args.output,
+            }
+        )
         articles = load_articles(args.articles)
         events = load_events(args.events)
         feed = build_feed(
@@ -192,15 +418,25 @@ def _run(argv: Sequence[str] | None = None) -> int:
             config=_config(args.config),
         )
         payload = feed_to_dict(feed)
+        outputs: dict[Path, str] = {}
         if args.output:
-            write_json(args.output, payload)
-        else:
-            print(json.dumps(payload, indent=2, sort_keys=True))
+            outputs[Path(args.output)] = json_text(payload)
         if args.html:
             article_map = {article.id: article for article in articles}
-            render_feed_report(feed, article_map, output=args.html)
+            outputs[Path(args.html)] = render_feed_html(feed, article_map)
+        atomic_write_texts(outputs)
+        if not args.output:
+            print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
     if args.command == "evaluate":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "config": args.config,
+                "events": args.events,
+                "output": args.output,
+            }
+        )
         report = evaluate_leave_last_out(
             load_articles(args.articles),
             load_events(args.events),
@@ -215,6 +451,15 @@ def _run(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(evaluation_payload, indent=2, sort_keys=True))
         return 0
     if args.command == "benchmark":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "config": args.config,
+                "events": args.events,
+                "html": args.html,
+                "output": args.output,
+            }
+        )
         benchmark_report = run_policy_benchmark(
             load_articles(args.articles),
             load_events(args.events),
@@ -226,35 +471,47 @@ def _run(argv: Sequence[str] | None = None) -> int:
             seed=args.seed,
         )
         benchmark_payload = benchmark_report.to_dict()
+        outputs = {}
         if args.output:
-            write_json(args.output, benchmark_payload)
-        else:
-            print(json.dumps(benchmark_payload, indent=2, sort_keys=True))
+            outputs[Path(args.output)] = json_text(benchmark_payload)
         if args.html:
-            write_benchmark_html(args.html, benchmark_report)
+            outputs[Path(args.html)] = render_benchmark_html(benchmark_report)
+        atomic_write_texts(outputs)
+        if not args.output:
+            print(json.dumps(benchmark_payload, indent=2, sort_keys=True))
         return 0
     if args.command == "simulate":
+        directory = Path(args.directory)
+        _require_distinct_paths(
+            {
+                "articles-output": str(directory / "articles.json"),
+                "events-output": str(directory / "events.json"),
+                "metadata-output": str(directory / "metadata.json"),
+            }
+        )
         synthetic = generate_synthetic(
             seed=args.seed,
             users=args.users,
             articles=args.articles,
             events_per_user=args.events_per_user,
         )
-        directory = Path(args.directory)
         directory.mkdir(parents=True, exist_ok=True)
-        article_records = [_article_record(article) for article in synthetic.articles]
-        write_json(directory / "articles.json", article_records)
-        write_json(
-            directory / "events.json",
-            [_event_record(event) for event in synthetic.events],
-        )
-        write_json(
-            directory / "metadata.json",
+        atomic_write_texts(
             {
-                "as_of": synthetic.as_of.isoformat(),
-                "seed": args.seed,
-                "users": list(synthetic.user_ids),
-            },
+                directory / "articles.json": json_text(
+                    [_article_record(article) for article in synthetic.articles]
+                ),
+                directory / "events.json": json_text(
+                    [_event_record(event) for event in synthetic.events]
+                ),
+                directory / "metadata.json": json_text(
+                    {
+                        "as_of": synthetic.as_of.isoformat(),
+                        "seed": args.seed,
+                        "users": list(synthetic.user_ids),
+                    }
+                ),
+            }
         )
         print(
             f"wrote {len(synthetic.articles)} articles and "
@@ -262,6 +519,17 @@ def _run(argv: Sequence[str] | None = None) -> int:
         )
         return 0
     if args.command == "import-mind":
+        directory = Path(args.directory)
+        _require_distinct_paths(
+            {
+                "articles-output": str(directory / "articles.json"),
+                "behaviors": args.behaviors,
+                "events-output": str(directory / "events.json"),
+                "impressions-output": str(directory / "impressions.json"),
+                "metadata-output": str(directory / "metadata.json"),
+                "news": args.news,
+            }
+        )
         catalog_published_at = parse_datetime(args.catalog_published_at, "catalog_published_at")
         behavior_timezone = fixed_offset(args.behavior_utc_offset)
         behavior_offset_hours = float(args.behavior_utc_offset)
@@ -273,35 +541,38 @@ def _run(argv: Sequence[str] | None = None) -> int:
             catalog_published_at=catalog_published_at,
             behavior_timezone=behavior_timezone,
         )
-        directory = Path(args.directory)
         directory.mkdir(parents=True, exist_ok=True)
-        write_json(
-            directory / "articles.json",
-            [_article_record(article) for article in mind_dataset.articles],
-        )
-        write_json(
-            directory / "events.json",
-            [_event_record(event) for event in mind_dataset.events],
-        )
-        write_mind_impressions(directory / "impressions.json", mind_dataset.impression_records)
-        write_json(
-            directory / "metadata.json",
+        atomic_write_texts(
             {
-                "adapter": "mind-tsv-v2",
-                "articles": len(mind_dataset.articles),
-                "click_events": len(mind_dataset.events),
-                "impressions": mind_dataset.impressions,
-                "ignored_history_items": mind_dataset.ignored_history_items,
-                "news_sha256": mind_dataset.news_sha256,
-                "behaviors_sha256": mind_dataset.behaviors_sha256,
-                "catalog_published_at": catalog_published_at.isoformat(),
-                "behavior_utc_offset_hours": behavior_offset_hours,
-                "limitations": [
-                    "one caller-declared catalog availability time is used",
-                    "news category is used as a source proxy",
-                    "undated history is counted but is not converted into preference events",
-                ],
-            },
+                directory / "articles.json": json_text(
+                    [_article_record(article) for article in mind_dataset.articles]
+                ),
+                directory / "events.json": json_text(
+                    [_event_record(event) for event in mind_dataset.events]
+                ),
+                directory / "impressions.json": json_text(
+                    [impression_to_dict(item) for item in mind_dataset.impression_records]
+                ),
+                directory / "metadata.json": json_text(
+                    {
+                        "adapter": "mind-tsv-v2",
+                        "articles": len(mind_dataset.articles),
+                        "click_events": len(mind_dataset.events),
+                        "impressions": mind_dataset.impressions,
+                        "ignored_history_items": mind_dataset.ignored_history_items,
+                        "news_sha256": mind_dataset.news_sha256,
+                        "behaviors_sha256": mind_dataset.behaviors_sha256,
+                        "catalog_published_at": catalog_published_at.isoformat(),
+                        "behavior_utc_offset_hours": behavior_offset_hours,
+                        "limitations": [
+                            "one caller-declared catalog availability time is used",
+                            "news category is used as a source proxy",
+                            "undated history is counted but is not converted into "
+                            "preference events",
+                        ],
+                    }
+                ),
+            }
         )
         print(
             f"converted {len(mind_dataset.articles)} articles and "
@@ -309,6 +580,13 @@ def _run(argv: Sequence[str] | None = None) -> int:
         )
         return 0
     if args.command == "evaluate-mind":
+        _require_distinct_paths(
+            {
+                "impressions": args.impressions,
+                "output": args.output,
+                "scores": args.scores,
+            }
+        )
         mind_report = evaluate_mind_impressions(
             load_mind_impressions(args.impressions),
             load_mind_scores(args.scores),
@@ -321,6 +599,14 @@ def _run(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
     if args.command == "train-click-model":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "config": args.config,
+                "events": args.events,
+                "output": args.output,
+            }
+        )
         model = PointwiseLogisticRanker(
             epochs=args.epochs,
             learning_rate=args.learning_rate,
@@ -346,6 +632,14 @@ def _run(argv: Sequence[str] | None = None) -> int:
         )
         return 0
     if args.command == "rank-click-model":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "events": args.events,
+                "model": args.model,
+                "output": args.output,
+            }
+        )
         model = PointwiseLogisticRanker.load(args.model)
         predictions = model.rank_for_user(
             args.user,
@@ -363,6 +657,131 @@ def _run(argv: Sequence[str] | None = None) -> int:
             write_json(args.output, payload)
         else:
             print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    if args.command == "stream-ingest":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "checkpoint": args.checkpoint,
+                "config": args.config,
+                "input": args.input,
+                "log": args.log,
+                "output": args.output,
+            }
+        )
+        stream_limits = _event_stream_limits(args)
+        incoming = load_interaction_events(args.input, limits=stream_limits)
+        checkpoint_path = None
+        if args.checkpoint is not None and Path(args.checkpoint).exists():
+            checkpoint_path = args.checkpoint
+        store = _open_event_store(args, checkpoint=checkpoint_path)
+        stream_report = store.ingest(incoming)
+        stream_payload: dict[str, object] = {
+            "ingest": stream_report.to_dict(),
+            "object": "mosaicfeed.interaction_ingest",
+            "recovered_torn_tail_bytes": store.recovered_torn_tail_bytes,
+        }
+        if args.checkpoint is not None:
+            stream_payload["checkpoint"] = store.checkpoint(args.checkpoint).to_dict()
+        _emit_json(stream_payload, args.output)
+        return 0
+    if args.command == "stream-checkpoint":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "checkpoint": args.checkpoint,
+                "config": args.config,
+                "log": args.log,
+                "output": args.output,
+            },
+            allowed_equal=frozenset({frozenset({"checkpoint", "output"})}),
+        )
+        store = _open_event_store(args, checkpoint=args.checkpoint)
+        checkpoint_payload = {
+            "checkpoint": store.checkpoint(args.output).to_dict(),
+            "object": "mosaicfeed.interaction_checkpoint",
+            "recovered_torn_tail_bytes": store.recovered_torn_tail_bytes,
+        }
+        _emit_json(checkpoint_payload, None)
+        return 0
+    if args.command == "stream-replay":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "checkpoint": args.checkpoint,
+                "config": args.config,
+                "events-output": args.events_output,
+                "log": args.log,
+                "output": args.output,
+            }
+        )
+        store = _open_event_store(args, checkpoint=args.checkpoint)
+        as_of = _clock(args.as_of)
+        if args.users is None:
+            profiles = store.profiles(as_of=as_of)
+        else:
+            if len(args.users) != len(set(args.users)):
+                raise ValueError("--user values must be unique")
+            profiles = tuple(store.profile(user_id, as_of=as_of) for user_id in args.users)
+        history = store.history_snapshot()
+        replay_payload = {
+            "as_of": as_of.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+            "history_snapshot": history.metadata(),
+            "object": "mosaicfeed.profile_replay",
+            "profiles": [profile_to_dict(profile, as_of=as_of) for profile in profiles],
+            "recovered_torn_tail_bytes": store.recovered_torn_tail_bytes,
+            "torn_tail_bytes": store.torn_tail_bytes,
+        }
+        outputs = {}
+        if args.events_output:
+            outputs[Path(args.events_output)] = json_text(
+                [_event_record(event) for event in history.events]
+            )
+        if args.output:
+            outputs[Path(args.output)] = json_text(replay_payload)
+        atomic_write_texts(outputs)
+        if not args.output:
+            print(json.dumps(replay_payload, indent=2, sort_keys=True))
+        return 0
+    if args.command == "serve-click-model":
+        limits = ServingLimits(
+            max_request_bytes=args.max_request_bytes,
+            max_response_bytes=args.max_response_bytes,
+            max_k=args.max_k,
+            max_candidates=args.max_candidates,
+            max_catalog_articles=args.max_catalog_articles,
+            max_history_events=args.max_history_events,
+            max_model_bytes=args.max_model_bytes,
+            max_catalog_bytes=args.max_catalog_bytes,
+            max_history_bytes=args.max_history_bytes,
+            max_topics_per_article=args.max_topics_per_article,
+            max_catalog_topic_cells=args.max_catalog_topic_cells,
+            max_concurrency=args.max_concurrency,
+            request_timeout_seconds=args.request_timeout_seconds,
+            max_identifier_chars=args.max_identifier_chars,
+            max_event_weight=args.max_event_weight,
+        )
+        service = load_click_rank_service(
+            args.model,
+            args.articles,
+            args.events,
+            limits=limits,
+        )
+        token = resolve_bearer_token(args.token_env)
+        server = create_rank_server(
+            service,
+            host=args.host,
+            port=args.port,
+            bearer_token=token,
+            allow_nonloopback=args.allow_nonloopback,
+        )
+        address = cast(tuple[str, int], server.server_address)
+        print(
+            f"serving frozen click model on http://{address[0]}:{address[1]} "
+            f"(authentication {'enabled' if token is not None else 'disabled'})",
+            file=sys.stderr,
+        )
+        serve_rank_server(server)
         return 0
     raise AssertionError("unreachable command")
 

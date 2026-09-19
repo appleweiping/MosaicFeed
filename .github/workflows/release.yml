@@ -48,8 +48,12 @@ jobs:
           test "v${version}" = "${GITHUB_REF_NAME}"
       - name: Run release tests
         run: uv run --locked pytest --cov=mosaicfeed --cov-branch --cov-report=term-missing
+      - name: Enforce pure branch coverage
+        run: uv run --locked python scripts/verify_branch_coverage.py
       - name: Build distributions
         run: uv run --locked python -m build --no-isolation
+      - name: Verify bounded distribution contents
+        run: uv run --locked python scripts/verify_distributions.py
       - name: Verify the wheel in a clean environment
         shell: bash
         run: |
@@ -57,6 +61,8 @@ jobs:
           .release-wheel-check/bin/python -m pip install --disable-pip-version-check --no-deps dist/*.whl
           .release-wheel-check/bin/python -c "import mosaicfeed; assert mosaicfeed.__version__ == '${GITHUB_REF_NAME#v}'"
           .release-wheel-check/bin/mosaicfeed --version
+          .release-wheel-check/bin/mosaicfeed serve-click-model --help
+          .release-wheel-check/bin/mosaicfeed stream-replay --help
       - name: Verify the source distribution in a clean environment
         shell: bash
         run: |
@@ -64,6 +70,8 @@ jobs:
           .release-sdist-check/bin/python -m pip install --disable-pip-version-check --no-deps dist/*.tar.gz
           .release-sdist-check/bin/python -c "import mosaicfeed; assert mosaicfeed.__version__ == '${GITHUB_REF_NAME#v}'"
           .release-sdist-check/bin/mosaicfeed --version
+          .release-sdist-check/bin/mosaicfeed serve-click-model --help
+          .release-sdist-check/bin/mosaicfeed stream-replay --help
       - name: Generate runtime dependency SBOM
         shell: bash
         run: >-

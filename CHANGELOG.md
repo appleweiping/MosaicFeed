@@ -6,6 +6,80 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.5.0] - 2026-09-19
+
+### Added
+
+- Added a real standard-library HTTP inference service for frozen
+  `PointwiseLogisticRanker` snapshots, with `GET /health`, authenticated snapshot
+  metadata, and deterministic `POST /v1/rank` responses.
+- Added strict JSON/framing checks and explicit ceilings for bodies, responses,
+  requested ranks, candidates, snapshot rows/files, concurrent workers, and
+  request time, plus graceful shutdown behavior.
+- Added `serve-click-model`, loopback-only defaults, environment-only optional
+  bearer credentials, guarded non-loopback binding, protocol/security docs, and
+  real loopback integration tests.
+- Added a strict version-1 append-only interaction schema, idempotent event-ID
+  ingestion with conflict detection, per-user watermarks, chronological
+  incremental profile accumulators, and explicit late-event rebuild policy.
+- Added atomic checksummed profile checkpoints bound to an exact log prefix,
+  event chain, catalog/config semantics, and independently rebuilt state, plus
+  complete-tail replay and explicit torn-tail recovery.
+- Added one-pass bounded file snapshots, a streaming catalog fingerprint, and
+  explicit configuration, per-article-topic, aggregate catalog-topic, and live
+  user-topic ceilings so resource checks cover parsed and derived state rather
+  than only log bytes.
+- Added `stream-ingest`, `stream-checkpoint`, and `stream-replay`, including a
+  provenance-carrying frozen history export for model training and HTTP snapshot
+  restart workflows. Tests cover manual profile arithmetic, randomized full
+  rebuild equivalence, corruption, truncation, resource ceilings, and threaded
+  exactly-once ingestion.
+- Added a release-archive verifier with explicit path, file-count, uncompressed
+  byte, metadata, and required-module allowlists for both sdist and wheel files.
+- Added a branch-only coverage gate that independently checks covered arcs
+  against all measured branches; the combined line/branch percentage is not
+  treated as proof of the 90% branch requirement.
+- Event-log mutation now rejects symbolic links and multiply-linked files and
+  verifies path/descriptor identity around every append and torn-tail repair.
+- MIND conversions and frozen history snapshots derive their records and
+  fingerprints from retained, bounded immutable source bytes.
+
+### Changed
+
+- Learned ranking can restrict candidate IDs without discarding the complete
+  catalog context used to construct the point-in-time user profile.
+- Legacy `Event` values accept an optional positive finite `weight`; omitted
+  weights remain exactly `1.0`, while incremental and offline profile builders
+  apply the same weighted signal semantics. Benchmark dataset fingerprints now
+  include this ranking-relevant field.
+- Tuple-backed public results now snapshot tuple subclasses before validation,
+  model loading rejects finite individual weights whose aggregate magnitude can
+  overflow inference, and historical all-user profile reads share the global
+  topic-cell ceiling used by live state.
+- HTTP framing rejects pathological decimal `Content-Length` values as client
+  errors, and release archives reject control characters, platform device names,
+  portable path collisions, links, and special filesystem entries.
+- HTTP ranking now carries a monotonic cooperative deadline through catalog and
+  history validation, profile construction, topic traversal, and candidate
+  scoring, returning `504` without completing oversized eligible histories once
+  a bounded-interval check observes expiration.
+- JSON, JSONL, HTML, and fitted-model destinations now use flushed atomic
+  replacement with interruption-safe staging cleanup and old-target preservation;
+  multi-output CLI commands stage all outputs and roll back earlier replacements
+  if a later publication fails, including when a rename takes effect before
+  reporting an exception. POSIX directory metadata is fsynced after renames;
+  Windows, filesystem, and storage-hardware crash guarantees remain platform-specific.
+- Mutating CLI workflows reject lexical, canonical, symlink, and hardlink input/output
+  collisions before reading or writing their datasets.
+- Public MIND and benchmark reports now validate their complete construction
+  invariants and recursively freeze nested mappings.
+- Portable release-path checks now include `CONIN$`, `CONOUT$`, and the Windows
+  superscript-digit `COM¹`, `COM²`, `COM³`, `LPT¹`, `LPT²`, and `LPT³`
+  device aliases.
+- Bootstrap confidence controls now reject unrepresentable integers with a
+  domain error, and averaging divides before summing to preserve finite means
+  for large but valid observations.
+
 ## [0.4.0] - 2026-09-07
 
 ### Added

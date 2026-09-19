@@ -12,3 +12,7 @@ build/
 demo-feed.json
 demo-metrics.json
 .agent/
+.release-*/
+.verify-*/
+.verify-*.json
+.wheel-check/

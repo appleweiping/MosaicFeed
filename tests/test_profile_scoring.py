@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import datetime, timedelta
 
 import pytest
@@ -79,6 +80,23 @@ def test_recent_event_has_more_influence(articles: list[Article], now: datetime)
     assert profile.topic_weights["energy"] > profile.topic_weights["search"]
 
 
+def test_profile_applies_event_weight_before_normalization(
+    articles: list[Article], now: datetime
+) -> None:
+    profile = build_profile(
+        "u",
+        [
+            Event("u", "a1", EventKind.LIKE, now, weight=2.0),
+            Event("u", "a2", EventKind.LIKE, now, weight=1.0),
+        ],
+        {article.id: article for article in articles},
+        as_of=now,
+        config=FeedConfig(),
+    )
+    assert profile.topic_weights["energy"] == 1.0
+    assert profile.topic_weights["search"] == pytest.approx(0.5)
+
+
 def test_hide_produces_negative_interests(articles: list[Article], now: datetime) -> None:
     profile = build_profile(
         "u",
@@ -132,6 +150,42 @@ def test_profile_requires_aware_clock(articles: list[Article]) -> None:
         )
 
 
+def test_profile_deadline_cancels_a_large_event_stream_at_a_bounded_check(
+    articles: list[Article], now: datetime
+) -> None:
+    event = Event("u", articles[0].id, EventKind.CLICK, now)
+    yielded = 0
+
+    def events() -> Iterator[Event]:
+        nonlocal yielded
+        for _ in range(100_000):
+            yielded += 1
+            yield event
+
+    class Cancelled(Exception):
+        pass
+
+    checks = 0
+
+    def check_deadline() -> None:
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            raise Cancelled
+
+    with pytest.raises(Cancelled):
+        build_profile(
+            "u",
+            events(),
+            {article.id: article for article in articles},
+            as_of=now,
+            config=FeedConfig(),
+            deadline_check=check_deadline,
+        )
+    assert checks == 2
+    assert yielded == 1
+
+
 def test_deterministic_exploration_is_stable_and_bounded() -> None:
     first = deterministic_exploration("u", "a")
     assert first == deterministic_exploration("u", "a")
@@ -163,6 +217,38 @@ def test_score_article_is_decomposed_and_explained(articles: list[Article], now:
 def test_score_article_explains_cold_start(articles: list[Article], now: datetime) -> None:
     score = score_article(articles[1], UserProfile("new"), as_of=now, config=FeedConfig())
     assert "cold-start profile: ranking uses item evidence" in score.reasons
+
+
+def test_score_article_checks_deadline_within_large_topic_vectors(now: datetime) -> None:
+    article = Article(
+        "wide",
+        "Wide",
+        "",
+        tuple(f"topic-{index}" for index in range(1_024)),
+        "source",
+        now,
+    )
+
+    class Cancelled(Exception):
+        pass
+
+    checks = 0
+
+    def check_deadline() -> None:
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            raise Cancelled
+
+    with pytest.raises(Cancelled):
+        score_article(
+            article,
+            UserProfile("u"),
+            as_of=now,
+            config=FeedConfig(),
+            deadline_check=check_deadline,
+        )
+    assert checks == 2
 
 
 def test_score_article_marks_seen_item_not_novel(articles: list[Article], now: datetime) -> None:

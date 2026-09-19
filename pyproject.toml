@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mosaicfeed"
-version = "0.4.0"
-description = "An explainable, diversity-aware offline feed ranking laboratory"
+version = "0.5.0"
+description = "An explainable, diversity-aware feed ranking and evaluation laboratory"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
@@ -42,7 +42,37 @@ Repository = "https://github.com/appleweiping/MosaicFeed"
 Issues = "https://github.com/appleweiping/MosaicFeed/issues"
 
 [tool.hatch.build]
-exclude = ["/.agent"]
+exclude = [
+  "/.agent",
+  "/.mypy_cache",
+  "/.pytest_cache",
+  "/.ruff_cache",
+  "/.venv",
+  "/.verify-*",
+  "/build",
+  "/dist",
+  "**/__pycache__",
+  "**/*.py[cod]",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/.github",
+  "/CHANGELOG.md",
+  "/CITATION.cff",
+  "/CODE_OF_CONDUCT.md",
+  "/CONTRIBUTING.md",
+  "/LICENSE",
+  "/README.md",
+  "/SECURITY.md",
+  "/docs",
+  "/examples",
+  "/pyproject.toml",
+  "/scripts",
+  "/src",
+  "/tests",
+  "/uv.lock",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mosaicfeed"]
@@ -78,6 +108,6 @@ files = ["src"]
 targets = ["src"]
 # B311: MosaicFeed seeds `random.Random(seed)` deliberately so bootstrap confidence
 # intervals, holdout sampling and the synthetic-catalog simulation are reproducible.
-# The package runs entirely offline on the standard library and has no cryptographic
-# surface; `secrets` would break the determinism the evaluations depend on.
+# These call sites are deterministic research sampling/exploration, not token or
+# credential generation; `secrets` would break reproducible evaluations.
 skips = ["B311"]

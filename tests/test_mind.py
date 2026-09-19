@@ -11,6 +11,7 @@ import pytest
 from mosaicfeed.cli import main
 from mosaicfeed.datasets import MindCandidate, MindImpression
 from mosaicfeed.mind import (
+    MindEvaluationReport,
     evaluate_mind_impressions,
     impression_auc,
     impression_mrr,
@@ -171,6 +172,48 @@ def test_impression_loader_is_strict(tmp_path: Path, payload: object, message: s
         load_mind_impressions(path)
 
 
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"candidates": {}}, "candidates must be a list"),
+        ({"candidates": ["n1"]}, "candidate must be an object"),
+        ({"candidates": [{"article_id": 1, "clicked": True}]}, "article_id must be a string"),
+        ({"impression_id": 1}, "impression_id must be a string"),
+        ({"user_id": 1}, "user_id must be a string"),
+    ],
+)
+def test_impression_loader_rejects_wrong_field_types(
+    tmp_path: Path, change: dict[str, object], message: str
+) -> None:
+    record: dict[str, object] = {
+        "impression_id": "i1",
+        "user_id": "u1",
+        "occurred_at": "2019-11-15T00:00:00Z",
+        "candidates": [{"article_id": "n1", "clicked": True}],
+    }
+    record.update(change)
+    path = tmp_path / "impressions.json"
+    path.write_text(json.dumps([record]), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        load_mind_impressions(path)
+
+
+def test_impression_loader_rejects_duplicate_ids_and_non_object_rows(tmp_path: Path) -> None:
+    path = tmp_path / "impressions.json"
+    record = {
+        "impression_id": "i1",
+        "user_id": "u1",
+        "occurred_at": "2019-11-15T00:00:00Z",
+        "candidates": [{"article_id": "n1", "clicked": True}],
+    }
+    path.write_text(json.dumps([record, record]), encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate MIND impression"):
+        load_mind_impressions(path)
+    path.write_text(json.dumps([record, 1]), encoding="utf-8")
+    with pytest.raises(ValueError, match="list of MIND impression objects"):
+        load_mind_impressions(path)
+
+
 def test_score_loader_rejects_duplicate_non_finite_and_unknown_fields(tmp_path: Path) -> None:
     path = tmp_path / "scores.json"
     rows = [
@@ -186,6 +229,26 @@ def test_score_loader_rejects_duplicate_non_finite_and_unknown_fields(tmp_path: 
     rows = [{"impression_id": "i", "article_id": "n", "score": 1, "extra": 2}]
     path.write_text(json.dumps(rows), encoding="utf-8")
     with pytest.raises(ValueError, match="unknown"):
+        load_mind_scores(path)
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"impression_id": " "}, "score impression_id"),
+        ({"article_id": 1}, "score article_id"),
+        ({"score": True}, "score must be a finite number"),
+        ({"score": 10**1_000}, "score must be a finite number"),
+    ],
+)
+def test_score_loader_rejects_invalid_identifiers_and_numeric_values(
+    tmp_path: Path, change: dict[str, object], message: str
+) -> None:
+    record: dict[str, object] = {"impression_id": "i", "article_id": "n", "score": 1.0}
+    record.update(change)
+    path = tmp_path / "scores.json"
+    path.write_text(json.dumps([record]), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
         load_mind_scores(path)
 
 
@@ -205,6 +268,56 @@ def test_evaluation_macro_averages_and_fingerprints() -> None:
     assert payload["averaging"] == "macro over impressions"
     assert len(str(payload["impression_sha256"])) == 64
     assert len(str(payload["score_sha256"])) == 64
+    with pytest.raises(TypeError):
+        report.ndcg[5] = 0.0  # type: ignore[index]
+
+
+def test_mind_evaluation_report_rejects_forged_public_invariants() -> None:
+    with pytest.raises(ValueError, match="candidates"):
+        MindEvaluationReport(1, 1, 1.0, 1.0, {1: 1.0}, "0" * 64, "1" * 64)
+    with pytest.raises(ValueError, match="ndcg"):
+        MindEvaluationReport(1, 2, 1.0, 1.0, {1: float("nan")}, "0" * 64, "1" * 64)
+    with pytest.raises(ValueError, match="SHA-256"):
+        MindEvaluationReport(1, 2, 1.0, 1.0, {1: 1.0}, "bad", "1" * 64)
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"impressions": True}, "impressions"),
+        ({"impressions": 0}, "impressions"),
+        ({"candidates": True}, "candidates"),
+        ({"auc": True}, "finite number"),
+        ({"mrr": 10**1_000}, "finite number"),
+        ({"ndcg": {}}, "non-empty bounded mapping"),
+        ({"ndcg": {True: 1.0}}, "cutoffs"),
+        ({"score_sha256": "F" * 64}, "SHA-256"),
+    ],
+)
+def test_mind_report_rejects_malformed_public_state(
+    change: dict[str, object], message: str
+) -> None:
+    values: dict[str, object] = {
+        "impressions": 1,
+        "candidates": 2,
+        "auc": 1.0,
+        "mrr": 1.0,
+        "ndcg": {1: 1.0},
+        "impression_sha256": "0" * 64,
+        "score_sha256": "1" * 64,
+    }
+    values.update(change)
+    with pytest.raises(ValueError, match=message):
+        MindEvaluationReport(**values)  # type: ignore[arg-type]
+
+
+def test_metrics_reject_non_boolean_labels_and_invalid_score_objects() -> None:
+    with pytest.raises(ValueError, match="labels must be booleans"):
+        impression_auc([1, False], [1.0, 0.0])  # type: ignore[list-item]
+    with pytest.raises(ValueError, match="finite"):
+        impression_mrr([True, False], ["high", 0.0])  # type: ignore[list-item]
+    with pytest.raises(ValueError, match="positive integer"):
+        impression_ndcg([True, False], [1.0, 0.0], True)
 
 
 def test_evaluation_normalizes_numeric_scores_before_fingerprinting() -> None:

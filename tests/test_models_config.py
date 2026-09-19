@@ -19,6 +19,17 @@ from mosaicfeed.models import (
 )
 
 
+class SwitchingTuple(tuple[object, ...]):
+    def __new__(cls, initial: tuple[object, ...], alternate: tuple[object, ...]):
+        instance = super().__new__(cls, initial)
+        instance.alternate = alternate
+        instance.switched = False
+        return instance
+
+    def __iter__(self):
+        return iter(self.alternate) if self.switched else tuple.__iter__(self)
+
+
 def article(**overrides: object) -> Article:
     values: dict[str, object] = {
         "id": " item ",
@@ -103,6 +114,18 @@ def test_event_requires_enum_kind_and_finite_propensity() -> None:
         Event("u", "a", EventKind.CLICK, now, math.nan)
 
 
+@pytest.mark.parametrize("weight", [False, 0.0, -1.0, math.inf, 10**1_000])
+def test_event_requires_positive_finite_weight(weight: float) -> None:
+    with pytest.raises(ValueError, match="event weight"):
+        Event(
+            "u",
+            "a",
+            EventKind.CLICK,
+            datetime(2026, 1, 1, tzinfo=UTC),
+            weight=weight,
+        )
+
+
 def test_profile_freezes_and_normalizes_mapping() -> None:
     profile = UserProfile(" user ", {" AI ": 0.5, "unused": 0.0}, frozenset({"a"}), 2)
     assert profile.user_id == "user"
@@ -155,6 +178,25 @@ def test_feed_accepts_contiguous_unique_recommendations() -> None:
         ),
     )
     assert len(feed.recommendations) == 2
+
+
+def test_tuple_backed_public_models_snapshot_tuple_subclasses() -> None:
+    reasons = SwitchingTuple(("original",), ("changed",))
+    score = ScoreBreakdown(0, 0, 0, 0, 0, 0, 0, reasons)  # type: ignore[arg-type]
+    recommendation = Recommendation("a", 1, 0, score)
+    recommendations = SwitchingTuple((recommendation,), ())
+    feed = Feed(
+        "u",
+        datetime(2026, 1, 1, tzinfo=UTC),
+        recommendations,  # type: ignore[arg-type]
+    )
+
+    reasons.switched = True
+    recommendations.switched = True
+    assert type(score.reasons) is tuple
+    assert score.reasons == ("original",)
+    assert type(feed.recommendations) is tuple
+    assert feed.recommendations == (recommendation,)
 
 
 def test_feed_rejects_rank_gaps_duplicates_and_naive_time() -> None:

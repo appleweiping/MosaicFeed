@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -61,6 +62,18 @@ def test_dataset_fingerprint_is_order_independent(
     assert dataset_fingerprint(articles, events) == dataset_fingerprint(
         list(reversed(articles)), list(reversed(events))
     )
+    changed_weight = [
+        Event(
+            events[0].user_id,
+            events[0].article_id,
+            events[0].kind,
+            events[0].occurred_at,
+            events[0].propensity,
+            weight=2.0,
+        ),
+        *events[1:],
+    ]
+    assert dataset_fingerprint(articles, events) != dataset_fingerprint(articles, changed_weight)
 
 
 def _user_sample(
@@ -197,6 +210,19 @@ def test_policy_benchmark_uses_identical_holdouts_and_reports_intervals(
     assert "95% CI" in rendered
     assert "Exposure Gini" in rendered
     assert report.dataset_sha256 in rendered
+    with pytest.raises(TypeError):
+        report.policies[0].intervals["ndcg"] = report.policies[0].intervals["hit_rate"]
+    with pytest.raises(TypeError):
+        report.paired_deltas_from_mosaic["popularity"]["ndcg"] = report.paired_deltas_from_mosaic[
+            "popularity"
+        ]["hit_rate"]
+    mosaic = report.policies[0]
+    forged = dict(mosaic.intervals)
+    forged["ndcg"] = replace(forged["ndcg"], mean=0.25)
+    with pytest.raises(ValueError, match="point estimates"):
+        replace(mosaic, intervals=forged)
+    with pytest.raises(ValueError, match="non-mosaic policy"):
+        replace(report, paired_deltas_from_mosaic={})
 
 
 def test_policy_benchmark_rejects_bad_controls(

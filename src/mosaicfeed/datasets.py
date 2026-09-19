@@ -5,16 +5,13 @@ from __future__ import annotations
 import hashlib
 import math
 from collections.abc import Iterator
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone, tzinfo
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta, timezone, tzinfo
 from pathlib import Path
-from typing import Protocol
 
 from mosaicfeed.models import Article, Event, EventKind
 
-
-class _ByteDigest(Protocol):
-    def update(self, data: bytes, /) -> None: ...
+MAX_MIND_SOURCE_BYTES = 256 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,26 +48,88 @@ class MindImpression:
             or self.occurred_at.utcoffset() is None
         ):
             raise ValueError("MIND impression occurred_at must be timezone-aware")
-        if not isinstance(self.candidates, tuple) or not self.candidates:
+        if not isinstance(self.candidates, tuple):
             raise ValueError("MIND impression candidates must be a non-empty tuple")
-        if not all(isinstance(candidate, MindCandidate) for candidate in self.candidates):
+        candidates = tuple(self.candidates)
+        if not candidates:
+            raise ValueError("MIND impression candidates must be a non-empty tuple")
+        if not all(isinstance(candidate, MindCandidate) for candidate in candidates):
             raise ValueError("MIND impression candidates must contain MindCandidate values")
-        article_ids = [candidate.article_id for candidate in self.candidates]
+        object.__setattr__(self, "candidates", candidates)
+        article_ids = [candidate.article_id for candidate in candidates]
         if len(article_ids) != len(set(article_ids)):
             raise ValueError("MIND impression candidates must have unique article ids")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class MindDataset:
-    """The loss-aware subset of MIND fields that MosaicFeed can represent."""
+    """A loss-aware MIND projection derived from two immutable byte snapshots."""
 
     articles: tuple[Article, ...]
     events: tuple[Event, ...]
     impressions: int
     ignored_history_items: int
-    impression_records: tuple[MindImpression, ...] = ()
-    news_sha256: str = ""
-    behaviors_sha256: str = ""
+    impression_records: tuple[MindImpression, ...]
+    news_sha256: str
+    behaviors_sha256: str
+    _news_bytes: bytes = field(repr=False)
+    _behaviors_bytes: bytes = field(repr=False)
+    _catalog_published_at: datetime = field(repr=False)
+    _behavior_timezone: tzinfo = field(repr=False)
+
+    def __init__(
+        self,
+        news_bytes: bytes,
+        behaviors_bytes: bytes,
+        *,
+        catalog_published_at: datetime,
+        behavior_timezone: tzinfo,
+        max_source_bytes: int = MAX_MIND_SOURCE_BYTES,
+    ) -> None:
+        if type(news_bytes) is not bytes or type(behaviors_bytes) is not bytes:
+            raise ValueError("MIND source snapshots must be bytes")
+        _positive_source_limit(max_source_bytes)
+        if len(news_bytes) > max_source_bytes or len(behaviors_bytes) > max_source_bytes:
+            raise ValueError("MIND source exceeds max_source_bytes")
+        captured_catalog_time, zone = _validate_mind_assumptions(
+            catalog_published_at, behavior_timezone
+        )
+        articles, events, ignored, impressions = _parse_mind(
+            news_bytes,
+            behaviors_bytes,
+            catalog_published_at=captured_catalog_time,
+            behavior_timezone=zone,
+        )
+        object.__setattr__(self, "articles", articles)
+        object.__setattr__(self, "events", events)
+        object.__setattr__(self, "impressions", len(impressions))
+        object.__setattr__(self, "ignored_history_items", ignored)
+        object.__setattr__(self, "impression_records", impressions)
+        object.__setattr__(self, "news_sha256", hashlib.sha256(news_bytes).hexdigest())
+        object.__setattr__(self, "behaviors_sha256", hashlib.sha256(behaviors_bytes).hexdigest())
+        object.__setattr__(self, "_news_bytes", news_bytes)
+        object.__setattr__(self, "_behaviors_bytes", behaviors_bytes)
+        object.__setattr__(self, "_catalog_published_at", captured_catalog_time)
+        object.__setattr__(self, "_behavior_timezone", zone)
+
+    def verify_provenance(self) -> bool:
+        """Reparse retained bytes and compare every public derived value."""
+
+        articles, events, ignored, impressions = _parse_mind(
+            self._news_bytes,
+            self._behaviors_bytes,
+            catalog_published_at=self._catalog_published_at,
+            behavior_timezone=self._behavior_timezone,
+        )
+        return (
+            articles == self.articles
+            and events == self.events
+            and ignored == self.ignored_history_items
+            and impressions == self.impression_records
+            and len(impressions) == self.impressions
+            and hashlib.sha256(self._news_bytes).hexdigest() == self.news_sha256
+            and hashlib.sha256(self._behaviors_bytes).hexdigest() == self.behaviors_sha256
+        )
 
 
 def fixed_offset(hours: float) -> tzinfo:
@@ -98,32 +157,35 @@ def _mind_time(value: str, zone: tzinfo, *, line_number: int) -> datetime:
     return parsed.replace(tzinfo=zone)
 
 
-def _iter_tsv(path: str | Path, digest: _ByteDigest) -> Iterator[tuple[int, list[str]]]:
-    """Stream and fingerprint the exact bytes supplied to the TSV parser."""
+def _positive_source_limit(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError("max_source_bytes must be a positive integer")
+    return value
 
+
+def _read_source(path: str | Path, maximum: int) -> bytes:
     with Path(path).open("rb") as stream:
-        for line_number, raw_line in enumerate(stream, start=1):
-            digest.update(raw_line)
+        data = stream.read(maximum + 1)
+    if len(data) > maximum:
+        raise ValueError("MIND source exceeds max_source_bytes")
+    return data
+
+
+def _iter_tsv_bytes(data: bytes, source: str) -> Iterator[tuple[int, list[str]]]:
+    """Parse one immutable source snapshot without consulting the path again."""
+
+    for line_number, raw_line in enumerate(data.splitlines(keepends=True), start=1):
+        try:
             line = raw_line.decode("utf-8").rstrip("\r\n")
-            if line:
-                yield line_number, line.split("\t")
+        except UnicodeDecodeError as error:
+            raise ValueError(f"{source} is not valid UTF-8 on line {line_number}") from error
+        if line:
+            yield line_number, line.split("\t")
 
 
-def load_mind(
-    news_path: str | Path,
-    behaviors_path: str | Path,
-    *,
-    catalog_published_at: datetime,
-    behavior_timezone: tzinfo,
-) -> MindDataset:
-    """Load MIND ``news.tsv`` and ``behaviors.tsv`` as an honest click replay.
-
-    MIND does not expose per-article publication timestamps or publishers. The
-    caller must therefore declare one catalog availability time, and the adapter
-    uses the news category as a source proxy. Unclicked impressions and undated
-    history entries are not converted into preference events.
-    """
-
+def _validate_mind_assumptions(
+    catalog_published_at: datetime, behavior_timezone: tzinfo
+) -> tuple[datetime, tzinfo]:
     if (
         not isinstance(catalog_published_at, datetime)
         or catalog_published_at.tzinfo is None
@@ -138,11 +200,26 @@ def load_mind(
         raise ValueError("behavior_timezone must have a fixed UTC offset") from error
     if zone_offset is None:
         raise ValueError("behavior_timezone must have a fixed UTC offset")
+    try:
+        fixed_zone = timezone(zone_offset)
+    except ValueError as error:
+        raise ValueError("behavior_timezone must have a fixed UTC offset") from error
+    return catalog_published_at.astimezone(UTC), fixed_zone
 
-    news_digest = hashlib.sha256()
+
+def _parse_mind(
+    news_bytes: bytes,
+    behaviors_bytes: bytes,
+    *,
+    catalog_published_at: datetime,
+    behavior_timezone: tzinfo,
+) -> tuple[tuple[Article, ...], tuple[Event, ...], int, tuple[MindImpression, ...]]:
+    """Derive the complete public projection from exactly two byte snapshots."""
+
+    catalog_time, zone = _validate_mind_assumptions(catalog_published_at, behavior_timezone)
     articles: list[Article] = []
     article_ids: set[str] = set()
-    for line_number, fields in _iter_tsv(news_path, news_digest):
+    for line_number, fields in _iter_tsv_bytes(news_bytes, "MIND news"):
         if len(fields) != 8:
             raise ValueError(f"MIND news line {line_number} must contain 8 tab-separated fields")
         (
@@ -168,7 +245,7 @@ def load_mind(
                 summary=abstract,
                 topics=topics,
                 source=category or "uncategorized",
-                published_at=catalog_published_at,
+                published_at=catalog_time,
                 quality=0.5,
                 popularity=0.0,
             )
@@ -178,8 +255,7 @@ def load_mind(
     impression_records: list[MindImpression] = []
     impression_ids: set[str] = set()
     ignored_history_items = 0
-    behaviors_digest = hashlib.sha256()
-    for line_number, fields in _iter_tsv(behaviors_path, behaviors_digest):
+    for line_number, fields in _iter_tsv_bytes(behaviors_bytes, "MIND behaviors"):
         if len(fields) != 5:
             raise ValueError(
                 f"MIND behavior line {line_number} must contain 5 tab-separated fields"
@@ -192,7 +268,7 @@ def load_mind(
         if impression_id in impression_ids:
             raise ValueError(f"duplicate MIND impression id on line {line_number}: {impression_id}")
         impression_ids.add(impression_id)
-        occurred_at = _mind_time(raw_time, behavior_timezone, line_number=line_number)
+        occurred_at = _mind_time(raw_time, zone, line_number=line_number)
         history_ids = history.split() if history.strip() else []
         unknown_history = sorted(set(history_ids) - article_ids)
         if unknown_history:
@@ -232,13 +308,32 @@ def load_mind(
                 candidates=tuple(candidates),
             )
         )
+    return tuple(articles), tuple(events), ignored_history_items, tuple(impression_records)
 
+
+def load_mind(
+    news_path: str | Path,
+    behaviors_path: str | Path,
+    *,
+    catalog_published_at: datetime,
+    behavior_timezone: tzinfo,
+    max_source_bytes: int = MAX_MIND_SOURCE_BYTES,
+) -> MindDataset:
+    """Load MIND ``news.tsv`` and ``behaviors.tsv`` as an honest click replay.
+
+    MIND does not expose per-article publication timestamps or publishers. The
+    caller must therefore declare one catalog availability time, and the adapter
+    uses the news category as a source proxy. Unclicked impressions and undated
+    history entries are not converted into preference events.
+    """
+
+    maximum = _positive_source_limit(max_source_bytes)
+    news_bytes = _read_source(news_path, maximum)
+    behaviors_bytes = _read_source(behaviors_path, maximum)
     return MindDataset(
-        articles=tuple(articles),
-        events=tuple(events),
-        impressions=len(impression_ids),
-        ignored_history_items=ignored_history_items,
-        impression_records=tuple(impression_records),
-        news_sha256=news_digest.hexdigest(),
-        behaviors_sha256=behaviors_digest.hexdigest(),
+        news_bytes,
+        behaviors_bytes,
+        catalog_published_at=catalog_published_at,
+        behavior_timezone=behavior_timezone,
+        max_source_bytes=maximum,
     )

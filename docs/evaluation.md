@@ -23,6 +23,9 @@ external benchmark protocol.
 
 The local MIND adapter uses only clicked impressions as positive events. It does not treat unclicked
 impressions as dislikes, and it records but does not assign invented timestamps to history entries.
+Both TSV inputs are read once into bounded immutable byte snapshots. Articles,
+events, impressions, and source SHA-256 values are derived from those same
+bytes, so unrelated records cannot be paired with a provenance digest.
 Because MIND lacks publication timestamps and publisher identities, callers must declare one catalog
 availability time and category is explicitly labeled as a source proxy. These limitations must remain
 visible when interpreting freshness, source-diversity, and popularity-baseline results.

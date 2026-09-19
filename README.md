@@ -5,9 +5,9 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
 
-MosaicFeed is an explainable, diversity-aware laboratory for building and evaluating personalized content feeds. It turns timestamped views, clicks, likes, and hides into a decayed topic profile; scores every eligible article with inspectable evidence; and constructs a slate that balances relevance with topical novelty and source limits.
+MosaicFeed is an explainable, diversity-aware laboratory for building, evaluating, and locally serving personalized content feeds. It turns timestamped views, clicks, likes, and hides into a decayed topic profile; scores every eligible article with inspectable evidence; and constructs a slate that balances relevance with topical novelty and source limits.
 
-Everything runs offline with the Python standard library. There are no API keys, model downloads, hidden network calls, or nondeterministic process hashes.
+Training, evaluation, and data preparation run offline with the Python standard library. The optional inference command opens only an explicit HTTP listener (loopback by default); it makes no outbound calls and needs no vendor API key or model download.
 
 ![MosaicFeed example report](docs/demo.png)
 
@@ -32,6 +32,8 @@ A useful feed is a slate, not a sorted column. A pure relevance ranking can repe
 - Temporal leave-last-out evaluation with NDCG, hit rate, MRR, intra-list diversity, source diversity, catalog coverage, exposure Gini, and self-normalized IPS CTR.
 - Paired policy benchmarks against popularity, recency, and unconstrained-relevance baselines with deterministic bootstrap confidence intervals.
 - A fitted pointwise logistic click/like ranker whose training features are built only from each event's prior history, with strict portable model state.
+- A bounded, deterministic HTTP inference API over a frozen model/catalog/history snapshot, with loopback-safe defaults and optional bearer authentication.
+- A versioned append-only interaction stream with idempotent ingestion, per-user watermarks, incremental profile updates, deterministic late-event rebuilds, and checksummed checkpoint/replay.
 - Strict JSON/JSONL validation, CLI workflows, synthetic-data generation, and portable HTML reports.
 - Zero runtime dependencies and typed, immutable public models.
 
@@ -68,6 +70,27 @@ mosaicfeed rank-click-model \
   --user alex \
   --as-of 2026-08-30T12:00:00Z \
   --k 5
+
+mosaicfeed serve-click-model \
+  --model click-model.json \
+  --articles examples/articles.json \
+  --events examples/events.json
+
+curl --fail-with-body http://127.0.0.1:8080/v1/rank \
+  -H 'Content-Type: application/json' \
+  --data '{"user_id":"alex","as_of":"2026-08-30T12:00:00Z","k":3}'
+
+mosaicfeed stream-ingest \
+  --articles examples/articles.json \
+  --log scratch/interactions.jsonl \
+  --input examples/interaction-events.jsonl \
+  --checkpoint scratch/profiles.checkpoint.json
+
+mosaicfeed stream-replay \
+  --articles examples/articles.json \
+  --log scratch/interactions.jsonl \
+  --checkpoint scratch/profiles.checkpoint.json \
+  --as-of 2026-08-30T12:00:00Z
 ```
 
 Each result includes its score decomposition:
@@ -94,6 +117,11 @@ Each result includes its score decomposition:
 flowchart LR
     A[Article catalog] --> G[Point-in-time gate]
     E[Timestamped events] --> G
+    I[Versioned interaction JSONL] --> J[Idempotent append + watermark]
+    J --> K[Incremental profiles]
+    J --> X[Checksummed checkpoint]
+    X --> K
+    K --> P
     G --> P[Decayed signed topic profile]
     P --> S[Explainable candidate scorer]
     A --> S
@@ -107,6 +135,9 @@ flowchart LR
     H --> L[Leakage-safe event-time features]
     L --> T[Pointwise logistic trainer]
     T --> U[Portable learned model]
+    U --> V[Bounded local HTTP snapshot]
+    A --> V
+    E --> V
 ```
 
 | Module | Responsibility |
@@ -118,6 +149,8 @@ flowchart LR
 | `pipeline` | One-call point-in-time feed generation |
 | `metrics` | Ranking, diversity, catalog, exposure, and IPS diagnostics |
 | `learning` | Event-time feature construction, logistic training, persistence, and learned ranking |
+| `event_stream` | Versioned ingestion, deduplication, watermarks, incremental profiles, checkpoints, and replay |
+| `server` | Frozen click-model snapshot, strict HTTP protocol, authentication, and resource ceilings |
 | `simulation` | Seeded local datasets for demos and smoke benchmarks |
 | `io` | Strict JSON/JSONL parsing and stable serialization |
 | `report` | Self-contained, script-free HTML review dashboard |
@@ -270,7 +303,9 @@ news category as a source proxy. It converts clicked impressions into click even
 not pretending to timestamp—undated history entries. The conversion also retains every impression's
 ordered candidate set and binary labels in `impressions.json`; source-file SHA-256 values are written to
 `metadata.json` together with the normalized catalog time and behavior UTC offset needed to replay the
-conversion.
+conversion. Each source is read once into a bounded immutable byte snapshot;
+records and SHA-256 values are derived from those same bytes instead of being
+accepted as independently supplied provenance.
 
 Scores in strict long-form JSON can then be evaluated without reconstructing lost non-click candidates:
 
@@ -315,6 +350,35 @@ historical IDs so old logs can still be replayed against a pruned catalog.
 
 See [design and invariants](docs/design.md) for the complete point-in-time rules and [examples](examples/) for executable inputs.
 
+### Incremental event stream
+
+The ordinary `events.json`/JSONL history remains the simple offline interchange.
+For incremental updates with explicit recovery semantics, the versioned stream adds a globally unique
+`event_id`, explicit positive `weight`, canonical append-only storage, and
+bounded exactly-once behavior within one store. Per-user accumulators follow a
+declared watermark policy; accepted out-of-order data rebuilds only affected
+users. A checkpoint binds derived state to an exact log byte offset, prefix
+digest, event-chain digest, catalog/config digest, and independently verifiable
+event list.
+
+The authoritative log is never replaced by a checkpoint. A torn final record is
+reported and blocks writes unless the operator explicitly requests recovery;
+corrupt complete records are never skipped. Symbolic links and files with
+more than one hard link are rejected before replay, append, or recovery. Use
+one writer process per log.
+See the full [event-stream and recovery contract](docs/event-stream.md), including
+resource ceilings and the explicit export/restart boundary for HTTP snapshots.
+
+Commands that publish several ordinary outputs (`recommend`, `benchmark`,
+`simulate`, `import-mind`, and `stream-replay`) stage and flush every file before
+changing any destination. If a later replacement fails, earlier destinations
+are restored from same-directory backups. If a recovery rename also fails, its
+backup is retained and the recovery failure is attached to the original
+exception. The writer reconciles destination identity even when the operating
+system reports an exception after a rename has already taken effect. Individual renames are atomic, but
+readers can observe intermediate states across directories, and crash or power
+loss guarantees depend on the operating system, filesystem, and storage device.
+
 ## Learned click model
 
 `PointwiseLogisticRanker` adds a real fitted ranking path while retaining the
@@ -333,6 +397,38 @@ event-time feature/label matrix consumed by SGD. Because the event log does
 not necessarily contain complete candidate sets, this model is explicitly
 pointwise and does not claim a pairwise/listwise or causal objective.
 
+### Local HTTP inference
+
+`serve-click-model` loads and validates a fitted model, catalog, and history once,
+then serves that private immutable snapshot. `POST /v1/rank` requires an explicit
+timezone-aware `as_of`; no server clock enters a ranking response. An optional
+`candidate_ids` array limits what is scored without removing other catalog items
+from profile history. Events at `as_of` are included, later events and later
+articles are excluded, probabilities tie-break by article ID, and identical
+snapshot/request pairs serialize identically.
+
+The listener defaults to `127.0.0.1:8080`. Authentication is enabled only through
+a caller-named environment variable, never a command-line token:
+
+```bash
+export MOSAICFEED_TOKEN='replace-with-a-long-random-value'
+mosaicfeed serve-click-model \
+  --model click-model.json \
+  --articles examples/articles.json \
+  --events examples/events.json \
+  --token-env MOSAICFEED_TOKEN
+```
+
+Non-loopback binding is rejected unless `--allow-nonloopback` and a non-empty
+`--token-env` are both supplied. This small standard-library server is intended
+for one trusted machine or a controlled development network, not direct Internet
+exposure. Request bytes, response bytes, `k`, candidates, catalog rows, history
+events, file bytes, and concurrent workers have explicit ceilings. Socket I/O has
+a timeout, while ranking uses a monotonic cooperative deadline checked at bounded
+intervals through validation, profile construction, and candidate scoring. See the
+complete [HTTP inference protocol](docs/http-inference.md) and
+[security policy](SECURITY.md) before changing binding or limit options.
+
 ## Responsible use
 
 MosaicFeed is research and prototyping infrastructure, not a production policy. Item-side `quality` and `popularity` are caller-provided signals and can encode bias. Before deployment, define their provenance, measure exposure by relevant groups, add policy-specific safety constraints, validate latency and failure behavior, and run an online experiment with informed oversight. Explanations describe this ranker’s inputs; they are not causal explanations of user behavior.
@@ -344,13 +440,18 @@ python -m pip install -e ".[dev]"
 ruff check .
 mypy src
 pytest --cov=mosaicfeed --cov-branch --cov-report=term-missing
+python scripts/verify_branch_coverage.py
 python -m build
 ```
 
 The test suite covers model invariants, event-time training leakage, learned-state
 tampering, hand-checkable label behavior, negative feedback, deterministic
-scoring, constraint enforcement, metrics, strict I/O, CLI behavior, simulation,
-and report generation. CI runs the suite on Python 3.11, 3.12, and 3.13.
+scoring, constraint enforcement, metrics, strict I/O, real loopback HTTP,
+authentication and resource failures, CLI behavior, simulation, and report
+generation. It also checks event idempotency/conflicts, a hand-calculated profile
+oracle, shuffled replay equivalence, late data, log/checkpoint tampering, torn
+tail recovery, resource ceilings, and threaded ingestion. CI runs the suite on
+Python 3.11, 3.12, and 3.13.
 
 See [the release process](docs/releasing.md) for clean-install, SBOM, checksum,
 and build-provenance guarantees.

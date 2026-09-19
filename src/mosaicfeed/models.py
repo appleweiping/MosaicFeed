@@ -37,6 +37,18 @@ def _unit_interval(value: float, field_name: str) -> float:
     return number
 
 
+def _positive_finite(value: float, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field_name} must be a positive finite number")
+    try:
+        number = float(value)
+    except OverflowError as error:
+        raise ValueError(f"{field_name} must be a positive finite number") from error
+    if not math.isfinite(number) or number <= 0.0:
+        raise ValueError(f"{field_name} must be a positive finite number")
+    return number
+
+
 def _normalized_labels(values: tuple[str, ...]) -> tuple[str, ...]:
     if not isinstance(values, (tuple, list)) or not all(isinstance(item, str) for item in values):
         raise ValueError("topics must be a sequence of strings")
@@ -90,6 +102,7 @@ class Event:
     kind: EventKind
     occurred_at: datetime
     propensity: float | None = None
+    weight: float = 1.0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "user_id", _require_identifier(self.user_id, "user id"))
@@ -102,6 +115,7 @@ class Event:
             if propensity == 0.0:
                 raise ValueError("propensity must be in (0, 1]")
             object.__setattr__(self, "propensity", propensity)
+        object.__setattr__(self, "weight", _positive_finite(self.weight, "event weight"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,10 +183,12 @@ class ScoreBreakdown:
                 field_name,
                 _unit_interval(getattr(self, field_name), field_name),
             )
-        if not isinstance(self.reasons, tuple) or not all(
-            isinstance(reason, str) and reason.strip() for reason in self.reasons
-        ):
+        if not isinstance(self.reasons, tuple):
             raise ValueError("reasons must be a tuple of non-empty strings")
+        reasons = tuple(self.reasons)
+        if not all(isinstance(reason, str) and reason.strip() for reason in reasons):
+            raise ValueError("reasons must be a tuple of non-empty strings")
+        object.__setattr__(self, "reasons", reasons)
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,14 +216,16 @@ class Feed:
     def __post_init__(self) -> None:
         object.__setattr__(self, "user_id", _require_identifier(self.user_id, "user id"))
         object.__setattr__(self, "generated_at", _require_aware(self.generated_at, "generated_at"))
-        if not isinstance(self.recommendations, tuple) or not all(
-            isinstance(item, Recommendation) for item in self.recommendations
-        ):
+        if not isinstance(self.recommendations, tuple):
             raise ValueError("recommendations must be a tuple of Recommendation objects")
-        expected = list(range(1, len(self.recommendations) + 1))
-        actual = [item.rank for item in self.recommendations]
+        recommendations = tuple(self.recommendations)
+        if not all(isinstance(item, Recommendation) for item in recommendations):
+            raise ValueError("recommendations must be a tuple of Recommendation objects")
+        object.__setattr__(self, "recommendations", recommendations)
+        expected = list(range(1, len(recommendations) + 1))
+        actual = [item.rank for item in recommendations]
         if actual != expected:
             raise ValueError("recommendation ranks must be contiguous and start at 1")
-        ids = [item.article_id for item in self.recommendations]
+        ids = [item.article_id for item in recommendations]
         if len(ids) != len(set(ids)):
             raise ValueError("recommendations must not contain duplicate articles")

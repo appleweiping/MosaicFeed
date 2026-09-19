@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 
 from mosaicfeed.config import FeedConfig
@@ -23,8 +23,17 @@ def deterministic_exploration(user_id: str, article_id: str) -> float:
     return int.from_bytes(digest[:8], "big") / 2**64
 
 
-def topic_interest(profile: UserProfile, topics: Iterable[str]) -> float:
-    values = [profile.topic_weights.get(topic.casefold(), 0.0) for topic in topics]
+def topic_interest(
+    profile: UserProfile,
+    topics: Iterable[str],
+    *,
+    deadline_check: Callable[[], None] | None = None,
+) -> float:
+    values: list[float] = []
+    for index, topic in enumerate(topics):
+        if deadline_check is not None and index % 64 == 0:
+            deadline_check()
+        values.append(profile.topic_weights.get(topic.casefold(), 0.0))
     if not values:
         return 0.0
     raw = sum(values) / len(values)
@@ -37,12 +46,13 @@ def score_article(
     *,
     as_of: datetime,
     config: FeedConfig,
+    deadline_check: Callable[[], None] | None = None,
 ) -> ScoreBreakdown:
     _validate_clock(as_of)
     if article.published_at > as_of:
         raise ValueError("cannot score an article published in the future")
     age_hours = (as_of - article.published_at).total_seconds() / 3_600.0
-    interest = topic_interest(profile, article.topics)
+    interest = topic_interest(profile, article.topics, deadline_check=deadline_check)
     freshness = exponential_decay(age_hours, config.article_half_life_hours)
     novelty = 0.0 if article.id in profile.seen_article_ids else 1.0
     exploration = deterministic_exploration(profile.user_id, article.id)
@@ -59,9 +69,13 @@ def score_article(
     total = sum(components[name] * weight for name, weight in weights.items()) / weight_total
 
     reasons: list[str] = []
-    matched = sorted(
-        topic for topic in article.topics if profile.topic_weights.get(topic, 0.0) > 0.0
-    )
+    matched: list[str] = []
+    for index, topic in enumerate(article.topics):
+        if deadline_check is not None and index % 64 == 0:
+            deadline_check()
+        if profile.topic_weights.get(topic, 0.0) > 0.0:
+            matched.append(topic)
+    matched.sort()
     if matched:
         reasons.append(f"positive interests: {', '.join(matched)}")
     elif profile.event_count == 0:

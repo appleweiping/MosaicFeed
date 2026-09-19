@@ -1,10 +1,16 @@
 # Release process
 
-A push of a semantic-version tag such as `v0.4.0` invokes the release
+A push of a semantic-version tag such as `v0.5.0` invokes the release
 workflow. The workflow refuses a tag that differs from `project.version`,
 installs the committed `uv.lock`, runs the static and coverage-gated suite,
+checks that covered branches alone (not the combined line/branch score) reach
+90%,
 builds both source and wheel distributions with the locked build backend, and
-installs each distribution into its own clean environment.
+checks both archives against explicit path, portable-name collision, filesystem
+entry, file-count, byte-size, metadata, and required-module allowlists before
+installing each distribution into its own clean environment. Local virtual
+environments, caches, and verification directories are excluded from source
+distributions even when they exist beside the checkout.
 
 The GitHub Release contains the distributions, a CycloneDX 1.5 runtime
 dependency SBOM, and `SHA256SUMS`. GitHub also records build-provenance
@@ -16,7 +22,7 @@ Verify a downloaded file with:
 
 ```bash
 sha256sum --check SHA256SUMS
-gh attestation verify mosaicfeed-0.4.0-py3-none-any.whl \
+gh attestation verify mosaicfeed-0.5.0-py3-none-any.whl \
   --repo appleweiping/MosaicFeed
 ```
 

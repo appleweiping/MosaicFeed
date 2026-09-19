@@ -11,7 +11,7 @@ import pytest
 from mosaicfeed.cli import main
 from mosaicfeed.config import FeedConfig
 from mosaicfeed.io import write_json
-from mosaicfeed.learning import ClickPrediction, PointwiseLogisticRanker
+from mosaicfeed.learning import FEATURE_NAMES, ClickPrediction, PointwiseLogisticRanker
 from mosaicfeed.models import Article, Event, EventKind, UserProfile
 
 ORIGIN = datetime(2026, 1, 1, tzinfo=UTC)
@@ -218,6 +218,23 @@ def test_rank_for_user_is_stable_and_respects_seen_and_future_items() -> None:
     assert {item.article_id for item in first}.isdisjoint({"positive", "negative", "future"})
     assert [item.rank for item in first] == list(range(1, len(first) + 1))
 
+    deadline_checks = 0
+
+    def check_deadline() -> None:
+        nonlocal deadline_checks
+        deadline_checks += 1
+
+    checked = model.rank_for_user(
+        "u1",
+        [*catalog(), future],
+        labels(),
+        as_of=ORIGIN + timedelta(days=3),
+        k=10,
+        deadline_check=check_deadline,
+    )
+    assert checked == first
+    assert deadline_checks > 0
+
 
 def test_rank_ties_use_article_id_and_validate_inputs() -> None:
     model = fitted()
@@ -232,6 +249,34 @@ def test_rank_ties_use_article_id_and_validate_inputs() -> None:
         tied.rank_for_user("new", catalog(), [], as_of=ORIGIN, k=0)
     with pytest.raises(ValueError, match="unique"):
         tied.rank_for_user("new", [catalog()[0], catalog()[0]], [], as_of=ORIGIN, k=1)
+
+
+def test_candidate_subset_only_restricts_scoring_not_profile_history() -> None:
+    model = fitted()
+    clock = ORIGIN + timedelta(days=3)
+    subset = model.rank_for_user(
+        "u1",
+        catalog(),
+        labels(),
+        as_of=clock,
+        k=2,
+        candidate_ids=("candidate-b", "candidate-a"),
+    )
+    assert {prediction.article_id for prediction in subset} == {"candidate-a", "candidate-b"}
+    direct = model.rank_for_user("u1", catalog(), labels(), as_of=clock, k=4)
+    assert {prediction.article_id: prediction.probability for prediction in subset} == {
+        prediction.article_id: prediction.probability
+        for prediction in direct
+        if prediction.article_id in {"candidate-a", "candidate-b"}
+    }
+    with pytest.raises(ValueError, match="non-empty"):
+        model.rank_for_user("u", catalog(), [], as_of=clock, candidate_ids=("",))
+    with pytest.raises(ValueError, match="unique"):
+        model.rank_for_user(
+            "u", catalog(), [], as_of=clock, candidate_ids=("candidate-a", "candidate-a")
+        )
+    with pytest.raises(ValueError, match="unknown"):
+        model.rank_for_user("u", catalog(), [], as_of=clock, candidate_ids=("missing",))
 
 
 def test_state_and_file_round_trip_are_exact(tmp_path: Path) -> None:
@@ -249,9 +294,11 @@ def test_state_and_file_round_trip_are_exact(tmp_path: Path) -> None:
         lambda state: state.update(extra=True),
         lambda state: state.update(format="other"),
         lambda state: state.update(schema_version=2),
+        lambda state: state.update(schema_version=True),
         lambda state: state.update(feature_names=["bias"]),
         lambda state: state.update(weights=[0.0]),
         lambda state: state["weights"].__setitem__(0, float("nan")),
+        lambda state: state.update(weights=[1e308] * len(FEATURE_NAMES)),
         lambda state: state["training"].update(examples=99),
         lambda state: state["training"].update(as_of="not-a-time"),
         lambda state: state["training"].update(examples_sha256="NOT-A-DIGEST"),

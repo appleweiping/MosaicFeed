@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from mosaicfeed.cli import main
-from mosaicfeed.datasets import fixed_offset, load_mind
+from mosaicfeed.datasets import MindCandidate, MindDataset, MindImpression, fixed_offset, load_mind
 from mosaicfeed.models import EventKind
 
 NEWS = (
@@ -57,6 +57,63 @@ def test_load_mind_preserves_declared_information_and_clicks(tmp_path: Path) -> 
     assert len(dataset.news_sha256) == len(dataset.behaviors_sha256) == 64
     assert dataset.news_sha256 == hashlib.sha256(news.read_bytes()).hexdigest()
     assert dataset.behaviors_sha256 == hashlib.sha256(behaviors.read_bytes()).hexdigest()
+
+
+def test_mind_impression_snapshots_tuple_subclasses() -> None:
+    candidate = MindCandidate("N1", True)
+
+    class SwitchingCandidates(tuple[MindCandidate, ...]):
+        switched = False
+
+        def __iter__(self):
+            return iter(()) if self.switched else tuple.__iter__(self)
+
+    source = SwitchingCandidates((candidate,))
+    impression = MindImpression("1", "U1", datetime(2026, 1, 1, tzinfo=UTC), source)
+    source.switched = True
+    assert type(impression.candidates) is tuple
+    assert impression.candidates == (candidate,)
+
+
+def test_mind_dataset_derives_all_content_and_provenance_from_source_bytes() -> None:
+    catalog_time = datetime(2019, 1, 1, tzinfo=UTC)
+    dataset = MindDataset(
+        NEWS.encode(),
+        BEHAVIORS.encode(),
+        catalog_published_at=catalog_time,
+        behavior_timezone=UTC,
+    )
+    assert type(dataset.articles) is tuple
+    assert type(dataset.events) is tuple
+    assert type(dataset.impression_records) is tuple
+    assert dataset.verify_provenance()
+    assert dataset.news_sha256 == hashlib.sha256(NEWS.encode()).hexdigest()
+    assert dataset.behaviors_sha256 == hashlib.sha256(BEHAVIORS.encode()).hexdigest()
+
+    with pytest.raises((TypeError, ValueError)):
+        MindDataset(
+            (),  # type: ignore[arg-type]
+            (),  # type: ignore[arg-type]
+            catalog_published_at=catalog_time,
+            behavior_timezone=UTC,
+        )
+    with pytest.raises(TypeError):
+        MindDataset(  # type: ignore[call-arg]
+            NEWS.encode(),
+            BEHAVIORS.encode(),
+            catalog_published_at=catalog_time,
+            behavior_timezone=UTC,
+            articles=(),
+            news_sha256="0" * 64,
+        )
+    with pytest.raises(ValueError, match="max_source_bytes"):
+        MindDataset(
+            NEWS.encode(),
+            BEHAVIORS.encode(),
+            catalog_published_at=catalog_time,
+            behavior_timezone=UTC,
+            max_source_bytes=4,
+        )
 
 
 @pytest.mark.parametrize("offset", [True, float("nan"), 15, 10**1_000, 0.0001])

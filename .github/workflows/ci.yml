@@ -41,6 +41,7 @@ jobs:
       - if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         run: uv audit --locked
       - run: uv run --locked pytest --cov=mosaicfeed --cov-branch --cov-report=term-missing
+      - run: uv run --locked python scripts/verify_branch_coverage.py
       - if: matrix.python-version == '3.11'
         run: >-
           uv run --locked mosaicfeed benchmark --articles examples/articles.json
@@ -62,7 +63,38 @@ jobs:
             --model click-model-smoke.json --articles examples/articles.json \
             --events examples/events.json --user alex \
             --as-of 2026-08-30T12:00:00Z --k 3 --output click-ranking-smoke.json
+          uv run --locked mosaicfeed serve-click-model --help
+      - if: matrix.python-version == '3.11'
+        name: Run incremental event-stream smoke test
+        shell: bash
+        run: |
+          uv run --locked mosaicfeed stream-ingest \
+            --articles examples/articles.json --input examples/interaction-events.jsonl \
+            --log interaction-smoke.jsonl --checkpoint profile-smoke.checkpoint.json
+          uv run --locked mosaicfeed stream-replay \
+            --articles examples/articles.json --log interaction-smoke.jsonl \
+            --checkpoint profile-smoke.checkpoint.json --as-of 2026-08-30T12:00:00Z \
+            --output profile-replay-smoke.json --events-output frozen-history-smoke.json
+          uv run --locked mosaicfeed stream-checkpoint \
+            --articles examples/articles.json --log interaction-smoke.jsonl \
+            --checkpoint profile-smoke.checkpoint.json \
+            --output profile-smoke-next.checkpoint.json
+          uv run --locked python - <<'PY'
+          import json
+          from pathlib import Path
+
+          replay = json.loads(Path("profile-replay-smoke.json").read_text(encoding="utf-8"))
+          history = json.loads(Path("frozen-history-smoke.json").read_text(encoding="utf-8"))
+          assert replay["object"] == "mosaicfeed.profile_replay"
+          assert replay["history_snapshot"]["event_count"] == 3
+          assert [profile["user_id"] for profile in replay["profiles"]] == ["alex", "rin"]
+          assert len(history) == 3
+          assert {event["weight"] for event in history} == {1.0, 1.5}
+          assert Path("profile-smoke-next.checkpoint.json").stat().st_size > 0
+          PY
       - run: uv run --locked python -m build --no-isolation
+      - name: Verify bounded distribution contents
+        run: uv run --locked python scripts/verify_distributions.py
       - if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         name: Verify the wheel in a clean environment
         shell: bash
@@ -71,3 +103,5 @@ jobs:
           .ci-wheel-check/bin/python -m pip install --disable-pip-version-check --no-deps dist/*.whl
           .ci-wheel-check/bin/python -c "import mosaicfeed; print(mosaicfeed.__version__)"
           .ci-wheel-check/bin/mosaicfeed --help
+          .ci-wheel-check/bin/mosaicfeed serve-click-model --help
+          .ci-wheel-check/bin/mosaicfeed stream-replay --help

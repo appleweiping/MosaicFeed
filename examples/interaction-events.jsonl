@@ -1,0 +1,3 @@
+{"event_id":"demo-0001","item_id":"article-grid-basics","schema_version":1,"timestamp":"2026-08-18T10:00:00Z","type":"click","user_id":"alex","weight":1.0}
+{"event_id":"demo-0002","item_id":"article-climate-map","schema_version":1,"timestamp":"2026-08-23T15:00:00Z","type":"like","user_id":"alex","weight":1.5}
+{"event_id":"demo-0003","item_id":"article-robot-lab","schema_version":1,"timestamp":"2026-08-26T12:00:00Z","type":"click","user_id":"rin","weight":1.0}

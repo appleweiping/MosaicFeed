@@ -12,10 +12,23 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, cast
 
 from mosaicfeed.datasets import MindCandidate, MindImpression
 from mosaicfeed.io import load_json_text, parse_datetime, write_json
+
+
+def _unit_metric(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a finite number in [0, 1]")
+    try:
+        number = float(value)
+    except OverflowError as error:
+        raise ValueError(f"{name} must be a finite number in [0, 1]") from error
+    if not math.isfinite(number) or not 0.0 <= number <= 1.0:
+        raise ValueError(f"{name} must be a finite number in [0, 1]")
+    return number
 
 
 def _records(path: str | Path, kind: str) -> list[dict[str, Any]]:
@@ -225,6 +238,39 @@ class MindEvaluationReport:
     ndcg: Mapping[int, float]
     impression_sha256: str
     score_sha256: str
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.impressions, bool)
+            or not isinstance(self.impressions, int)
+            or self.impressions < 1
+        ):
+            raise ValueError("impressions must be a positive integer")
+        if (
+            isinstance(self.candidates, bool)
+            or not isinstance(self.candidates, int)
+            or self.candidates < 2 * self.impressions
+        ):
+            raise ValueError("candidates must contain a positive and negative per impression")
+        for name in ("auc", "mrr"):
+            object.__setattr__(self, name, _unit_metric(getattr(self, name), name))
+        if not isinstance(self.ndcg, Mapping) or not self.ndcg or len(self.ndcg) > 10_000:
+            raise ValueError("ndcg must be a non-empty bounded mapping")
+        normalized: dict[int, float] = {}
+        for cutoff, raw_value in self.ndcg.items():
+            if isinstance(cutoff, bool) or not isinstance(cutoff, int) or cutoff < 1:
+                raise ValueError("ndcg cutoffs must be positive integers")
+            normalized[cutoff] = _unit_metric(raw_value, "ndcg values")
+        object.__setattr__(self, "ndcg", MappingProxyType(normalized))
+        for name in ("impression_sha256", "score_sha256"):
+            value = getattr(self, name)
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or value != value.casefold()
+                or any(character not in "0123456789abcdef" for character in value)
+            ):
+                raise ValueError(f"{name} must be a lowercase SHA-256 digest")
 
     def to_dict(self) -> dict[str, object]:
         return {

@@ -7,14 +7,14 @@ import json
 import math
 import random
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Self
 
 from mosaicfeed.config import FeedConfig
-from mosaicfeed.io import load_json_text, parse_datetime
+from mosaicfeed.io import atomic_write_text, load_json_text, parse_datetime
 from mosaicfeed.models import Article, Event, EventKind, UserProfile
 from mosaicfeed.profile import build_profile
 from mosaicfeed.scoring import score_article
@@ -64,6 +64,18 @@ def _sigmoid(value: float) -> float:
         return 1.0 / (1.0 + math.exp(-value))
     exponential = math.exp(value)
     return exponential / (1.0 + exponential)
+
+
+def _finite_dot(weights: Iterable[float], features: Iterable[float], name: str) -> float:
+    try:
+        value = math.fsum(
+            weight * feature for weight, feature in zip(weights, features, strict=True)
+        )
+    except OverflowError as error:
+        raise ValueError(f"{name} is not finite") from error
+    if not math.isfinite(value):
+        raise ValueError(f"{name} is not finite")
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,8 +170,15 @@ class PointwiseLogisticRanker:
         *,
         as_of: datetime,
         config: FeedConfig,
+        deadline_check: Callable[[], None] | None = None,
     ) -> tuple[float, ...]:
-        evidence = score_article(article, profile, as_of=as_of, config=config)
+        evidence = score_article(
+            article,
+            profile,
+            as_of=as_of,
+            config=config,
+            deadline_check=deadline_check,
+        )
         return (
             1.0,
             evidence.interest,
@@ -244,9 +263,7 @@ class PointwiseLogisticRanker:
             generator.shuffle(indices)
             for index in indices:
                 features, label = examples[index]
-                prediction = _sigmoid(
-                    math.fsum(w * x for w, x in zip(weights, features, strict=True))
-                )
+                prediction = _sigmoid(_finite_dot(weights, features, "training logit"))
                 error = prediction - label
                 for feature_index, feature in enumerate(features):
                     penalty = 0.0 if feature_index == 0 else self.l2 * weights[feature_index]
@@ -264,19 +281,28 @@ class PointwiseLogisticRanker:
         self._training_sha256 = training_sha256
         return self
 
-    def predict(self, article: Article, profile: UserProfile, *, as_of: datetime) -> float:
+    def predict(
+        self,
+        article: Article,
+        profile: UserProfile,
+        *,
+        as_of: datetime,
+        deadline_check: Callable[[], None] | None = None,
+    ) -> float:
         """Predict a finite probability for one article/profile pair."""
 
         active_config = self._fitted_config()
         if not isinstance(article, Article) or not isinstance(profile, UserProfile):
             raise ValueError("article and profile must be MosaicFeed model values")
         clock = _clock(as_of, "as_of")
-        features = self._features(article, profile, as_of=clock, config=active_config)
-        return _sigmoid(
-            math.fsum(
-                weight * feature for weight, feature in zip(self._weights, features, strict=True)
-            )
+        features = self._features(
+            article,
+            profile,
+            as_of=clock,
+            config=active_config,
+            deadline_check=deadline_check,
         )
+        return _sigmoid(_finite_dot(self._weights, features, "prediction logit"))
 
     def rank_for_user(
         self,
@@ -286,35 +312,107 @@ class PointwiseLogisticRanker:
         *,
         as_of: datetime,
         k: int = 10,
+        candidate_ids: Iterable[str] | None = None,
+        deadline_check: Callable[[], None] | None = None,
     ) -> tuple[ClickPrediction, ...]:
-        """Build a point-in-time profile and rank eligible fitted-feature candidates."""
+        """Build a point-in-time profile and rank eligible fitted-feature candidates.
+
+        ``articles`` is always the complete catalog used to derive the profile.  An
+        optional ``candidate_ids`` subset restricts only the items scored, so profile
+        history remains correct even when an earlier interaction is not a candidate.
+        """
 
         active_config = self._fitted_config()
         _positive_int(k, "k")
         clock = _clock(as_of, "as_of")
-        article_list = tuple(articles)
-        if any(not isinstance(article, Article) for article in article_list):
-            raise ValueError("articles must contain Article values")
-        article_map = {article.id: article for article in article_list}
-        if len(article_map) != len(article_list):
-            raise ValueError("articles must have unique ids")
-        event_list = tuple(events)
-        if any(not isinstance(event, Event) for event in event_list):
-            raise ValueError("events must contain Event values")
+        if type(articles) is tuple:
+            article_list = articles
+        else:
+            article_values: list[Article] = []
+            for index, article in enumerate(articles):
+                if deadline_check is not None and index % 64 == 0:
+                    deadline_check()
+                article_values.append(article)
+            article_list = tuple(article_values)
+        for index, article in enumerate(article_list):
+            if deadline_check is not None and index % 64 == 0:
+                deadline_check()
+            if not isinstance(article, Article):
+                raise ValueError("articles must contain Article values")
+        article_map: dict[str, Article] = {}
+        for index, article in enumerate(article_list):
+            if deadline_check is not None and index % 64 == 0:
+                deadline_check()
+            if article.id in article_map:
+                raise ValueError("articles must have unique ids")
+            article_map[article.id] = article
+        if type(events) is tuple:
+            event_list = events
+        else:
+            event_values: list[Event] = []
+            for index, event in enumerate(events):
+                if deadline_check is not None and index % 64 == 0:
+                    deadline_check()
+                event_values.append(event)
+            event_list = tuple(event_values)
+        for index, event in enumerate(event_list):
+            if deadline_check is not None and index % 64 == 0:
+                deadline_check()
+            if not isinstance(event, Event):
+                raise ValueError("events must contain Event values")
+        if candidate_ids is None:
+            candidates = article_list
+        else:
+            selected_values: list[str] = []
+            selected_set: set[str] = set()
+            for index, article_id in enumerate(candidate_ids):
+                if deadline_check is not None and index % 64 == 0:
+                    deadline_check()
+                if not isinstance(article_id, str) or not article_id.strip():
+                    raise ValueError("candidate_ids must contain non-empty strings")
+                if article_id in selected_set:
+                    raise ValueError("candidate_ids must be unique")
+                selected_values.append(article_id)
+                selected_set.add(article_id)
+            selected_ids = tuple(selected_values)
+            unknown_ids = sorted(selected_set - set(article_map))
+            if unknown_ids:
+                raise ValueError(
+                    f"candidate_ids reference unknown articles: {', '.join(unknown_ids)}"
+                )
+            candidates = tuple(article_map[article_id] for article_id in selected_ids)
         profile = build_profile(
             user_id,
             event_list,
             article_map,
             as_of=clock,
             config=active_config,
+            deadline_check=deadline_check,
         )
-        scored = [
-            (article.id, self.predict(article, profile, as_of=clock))
-            for article in article_list
-            if article.published_at <= clock
-            and (not active_config.exclude_seen or article.id not in profile.seen_article_ids)
-        ]
+        scored: list[tuple[str, float]] = []
+        for index, article in enumerate(candidates):
+            if deadline_check is not None and index % 64 == 0:
+                deadline_check()
+            if article.published_at > clock or (
+                active_config.exclude_seen and article.id in profile.seen_article_ids
+            ):
+                continue
+            scored.append(
+                (
+                    article.id,
+                    self.predict(
+                        article,
+                        profile,
+                        as_of=clock,
+                        deadline_check=deadline_check,
+                    ),
+                )
+            )
+        if deadline_check is not None:
+            deadline_check()
         scored.sort(key=lambda pair: (-pair[1], pair[0]))
+        if deadline_check is not None:
+            deadline_check()
         return tuple(
             ClickPrediction(article_id=article_id, probability=probability, rank=rank)
             for rank, (article_id, probability) in enumerate(scored[:k], start=1)
@@ -363,7 +461,13 @@ class PointwiseLogisticRanker:
         }
         if not isinstance(state, Mapping) or set(state) != expected:
             raise ValueError("pointwise model state has missing or unknown fields")
-        if state["format"] != MODEL_FORMAT or state["schema_version"] != MODEL_SCHEMA_VERSION:
+        schema_version = state["schema_version"]
+        if (
+            state["format"] != MODEL_FORMAT
+            or isinstance(schema_version, bool)
+            or not isinstance(schema_version, int)
+            or schema_version != MODEL_SCHEMA_VERSION
+        ):
             raise ValueError("unsupported pointwise model format or schema version")
         parameters = state["parameters"]
         if not isinstance(parameters, Mapping) or set(parameters) != {
@@ -389,6 +493,7 @@ class PointwiseLogisticRanker:
         if not isinstance(raw_weights, list) or len(raw_weights) != len(FEATURE_NAMES):
             raise ValueError("pointwise model weights are malformed")
         weights = tuple(_finite(value, "weight") for value in raw_weights)
+        _finite_dot(tuple(abs(weight) for weight in weights), (1.0,) * len(weights), "weight norm")
         training = state["training"]
         if not isinstance(training, Mapping) or set(training) != {
             "as_of",
@@ -423,10 +528,9 @@ class PointwiseLogisticRanker:
     def save(self, path: str | Path) -> None:
         destination = Path(path)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(
+        atomic_write_text(
+            destination,
             json.dumps(self.to_state(), indent=2, sort_keys=True, allow_nan=False) + "\n",
-            encoding="utf-8",
-            newline="\n",
         )
 
     @classmethod

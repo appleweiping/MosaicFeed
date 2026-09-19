@@ -14,7 +14,11 @@ MosaicFeed treats recommendation as a point-in-time computation. The caller supp
 
 ## Profile semantics
 
-Each event kind has a configurable signed strength. Its contribution is multiplied by exponential half-life decay and divided across the article's topics. The resulting topic vector is normalized by its largest absolute value, preserving negative feedback in `[-1, 1]`.
+Each event kind has a configurable signed strength. Its contribution is
+multiplied by the event's positive finite weight and exponential half-life decay,
+then divided across the article's topics. Legacy events default to weight one.
+The resulting topic vector is normalized by its largest absolute value,
+preserving negative feedback in `[-1, 1]`.
 
 The seen set is separate from preference strength. An old interaction can have almost no profile weight while still preventing an item from being recommended when `exclude_seen` is enabled.
 
@@ -41,9 +45,59 @@ The label contract is observable feedback, not causal relevance: click/like is
 one and view/hide is zero. The model therefore reports itself as pointwise. It
 does not infer counterfactual outcomes for candidates absent from the log.
 
+## Incremental-event boundary
+
+The versioned interaction log is authoritative and append-only. One canonical
+record contains a globally unique event ID; equivalent reuse is idempotent and a
+different record with the same ID is a conflict. A batch is completely parsed,
+validated, deduplicated, checked against per-user/global resource ceilings, and
+planned before append. One `ProfileEventStore` lock orders its threads. Separate
+processes are deliberately outside that guarantee and must not share writer
+duties.
+
+User replay has a total `(timestamp, event_id)` order. The watermark is the
+maximum timestamp observed for that user minus the configured lateness. The
+default policy rejects earlier events; the alternate policy explicitly accepts
+and rebuilds affected users. Incremental accumulation and full chronological
+replay implement the same weighted half-life equation. A point-in-time query
+before the accumulator's newest timestamp replays only events at or before the
+requested time.
+
+A checkpoint is a cache of a complete log prefix, never the source of truth. It
+binds canonical events and derived user state to the byte offset, prefix digest,
+recursive event-chain digest, last-event digest, catalog/config digests, and
+lateness policy. Restore independently rebuilds state and then replays later
+complete log records. Only an incomplete final record is recoverable, and only
+under an explicit truncation option; invalid complete records stop replay.
+
+## Inference snapshot boundary
+
+The HTTP service clones a validated fitted model and stores the complete catalog
+and history as immutable tuples before it binds a socket. Requests can restrict
+the candidate IDs that are scored, but profile construction still uses the full
+catalog so interactions with non-candidate items retain their meaning. A running
+process never trains, appends events, reloads files, or consults the wall clock.
+
+Each request supplies an aware `as_of`. Profile events with
+`occurred_at <= as_of` are visible, while later events and articles published
+after `as_of` are not. Snapshot and request resource ceilings make the amount of
+work finite; a bounded semaphore rejects excess connections before starting
+another worker. Socket timeouts bound stalled bodies, and a wall-time check
+prevents a completed-but-late ranking from being returned. Graceful server close
+waits for existing non-daemon workers.
+
+An event-store `history_snapshot()` captures one bounded canonical log-prefix
+byte string and re-parses it to derive the frozen legacy events, exact applied
+byte offset, and event-chain digest. Those public values cannot be supplied
+independently of their retained source bytes. Creating such a snapshot does
+not mutate a running HTTP service. Publishing it requires writing a history
+export and deliberately restarting `serve-click-model`, preserving the service's
+read-only request semantics.
+
 ## Deliberate non-goals
 
-- Online serving, streaming updates, and distributed indexes.
+- Live mutation of a running model/history HTTP snapshot, multi-process event-log
+  writers, distributed indexes, and Internet-facing production serving.
 - Learned embeddings or large-language-model inference; the included learned
   model is a small, inspectable linear logistic ranker.
 - Causal claims from observational interaction logs.

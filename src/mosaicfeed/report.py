@@ -6,6 +6,7 @@ import html
 from collections.abc import Mapping
 from pathlib import Path
 
+from mosaicfeed.io import atomic_write_text
 from mosaicfeed.models import Article, Feed
 
 
@@ -13,13 +14,11 @@ def _escape(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
-def render_feed_report(
+def render_feed_html(
     feed: Feed,
     articles: Mapping[str, Article],
-    *,
-    output: str | Path,
-) -> None:
-    """Render a self-contained, script-free review dashboard."""
+) -> str:
+    """Return a self-contained, script-free review dashboard."""
 
     source_count = len({articles[item.article_id].source for item in feed.recommendations})
     topic_count = len(
@@ -86,5 +85,15 @@ def render_feed_report(
   <section class="summary"><div class="stat"><b>{len(feed.recommendations)}</b><span>ranked items</span></div><div class="stat"><b>{source_count}</b><span>distinct sources</span></div><div class="stat"><b>{topic_count}</b><span>topics represented</span></div></section>
   {body}
 </main></body></html>"""
-    document = "\n".join(line.rstrip() for line in document.splitlines()) + "\n"
-    Path(output).write_text(document, encoding="utf-8", newline="\n")
+    return "\n".join(line.rstrip() for line in document.splitlines()) + "\n"
+
+
+def render_feed_report(
+    feed: Feed,
+    articles: Mapping[str, Article],
+    *,
+    output: str | Path,
+) -> None:
+    """Render a self-contained, script-free review dashboard."""
+
+    atomic_write_text(output, render_feed_html(feed, articles))

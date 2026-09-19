@@ -12,11 +12,27 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
+from itertools import islice
 from pathlib import Path
+from types import MappingProxyType
 
 from mosaicfeed.config import FeedConfig
+from mosaicfeed.io import atomic_write_text
+from mosaicfeed.logged import LoggedPolicySummary
 from mosaicfeed.metrics import EvaluationReport, EvaluationSamples, evaluate_leave_last_out_samples
 from mosaicfeed.models import Article, Event
+
+
+def _finite_float(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a finite number")
+    try:
+        number = float(value)
+    except OverflowError as error:
+        raise ValueError(f"{name} must be a finite number") from error
+    if not math.isfinite(number):
+        raise ValueError(f"{name} must be a finite number")
+    return number
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +44,24 @@ class ConfidenceInterval:
     upper: float
     confidence: float
     observations: int
+
+    def __post_init__(self) -> None:
+        for name in ("mean", "lower", "upper", "confidence"):
+            object.__setattr__(self, name, _finite_float(getattr(self, name), name))
+        if self.lower > self.upper:
+            raise ValueError("confidence interval lower must not exceed upper")
+        if not 0.0 < self.confidence < 1.0:
+            raise ValueError("confidence must be in (0, 1)")
+        if (
+            isinstance(self.observations, bool)
+            or not isinstance(self.observations, int)
+            or self.observations < 0
+        ):
+            raise ValueError("observations must be a non-negative integer")
+        if self.observations == 0 and any(
+            value != 0.0 for value in (self.mean, self.lower, self.upper)
+        ):
+            raise ValueError("an empty confidence interval must contain only zeros")
 
     def to_dict(self) -> dict[str, int | float]:
         return {
@@ -64,10 +98,8 @@ def bootstrap_mean(
         raise ValueError("samples must be a positive integer")
     if isinstance(seed, bool) or not isinstance(seed, int):
         raise ValueError("seed must be an integer")
-    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
-        raise ValueError("confidence must be a finite number in (0, 1)")
-    confidence_value = float(confidence)
-    if not math.isfinite(confidence_value) or not 0.0 < confidence_value < 1.0:
+    confidence_value = _finite_float(confidence, "confidence")
+    if not 0.0 < confidence_value < 1.0:
         raise ValueError("confidence must be a finite number in (0, 1)")
     converted: list[float] = []
     for value in values:
@@ -85,12 +117,12 @@ def bootstrap_mean(
     generator = random.Random(seed)
     count = len(observations)
     estimates = sorted(
-        math.fsum(observations[generator.randrange(count)] for _ in range(count)) / count
+        math.fsum(observations[generator.randrange(count)] / count for _ in range(count))
         for _ in range(samples)
     )
     tail = (1.0 - confidence_value) / 2.0
     return ConfidenceInterval(
-        mean=math.fsum(observations) / count,
+        mean=math.fsum(value / count for value in observations),
         lower=_quantile(estimates, tail),
         upper=_quantile(estimates, 1.0 - tail),
         confidence=confidence_value,
@@ -106,6 +138,82 @@ _USER_MEAN_METRICS = (
     "source_diversity",
 )
 _BOOTSTRAP_METRICS = (*_USER_MEAN_METRICS, "catalog_coverage", "exposure_gini")
+
+
+def _lowercase_digest(value: object, name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or value != value.casefold()
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ValueError(f"{name} must be a lowercase SHA-256 digest")
+    return value
+
+
+def _validate_evaluation_report(report: EvaluationReport) -> None:
+    for name in ("users_evaluated", "users_skipped"):
+        value = getattr(report, name)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"evaluation {name} must be a non-negative integer")
+    if isinstance(report.k, bool) or not isinstance(report.k, int) or report.k < 1:
+        raise ValueError("evaluation k must be a positive integer")
+    for name in (
+        "ndcg",
+        "hit_rate",
+        "mean_reciprocal_rank",
+        "intra_list_diversity",
+        "source_diversity",
+        "catalog_coverage",
+        "exposure_gini",
+        "logged_ips_ctr",
+    ):
+        value = _finite_float(getattr(report, name), f"evaluation {name}")
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(f"evaluation {name} must be a finite number in [0, 1]")
+    summary = report.logged_policy
+    if summary is not None:
+        _validate_logged_policy(summary)
+        if not math.isclose(report.logged_ips_ctr, summary.estimate, rel_tol=1e-12, abs_tol=1e-12):
+            raise ValueError("logged policy estimate must match logged_ips_ctr")
+
+
+def _validate_logged_policy(summary: LoggedPolicySummary) -> None:
+    if not isinstance(summary, LoggedPolicySummary):
+        raise ValueError("logged_policy must be a LoggedPolicySummary")
+    for name in ("users", "observations"):
+        value = getattr(summary, name)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"logged policy {name} must be a non-negative integer")
+    if summary.users > summary.observations or (summary.users == 0) != (summary.observations == 0):
+        raise ValueError("logged policy users must not exceed observations")
+    if isinstance(summary.resamples, bool) or not isinstance(summary.resamples, int):
+        raise ValueError("logged policy resamples must be a positive integer")
+    if summary.resamples < 1:
+        raise ValueError("logged policy resamples must be a positive integer")
+    estimate = _finite_float(summary.estimate, "logged policy estimate")
+    effective = _finite_float(summary.effective_sample_size, "effective_sample_size")
+    share = _finite_float(summary.largest_weight_share, "largest_weight_share")
+    confidence = _finite_float(summary.confidence, "logged policy confidence")
+    if not 0.0 <= estimate <= 1.0 or not 0.0 <= share <= 1.0:
+        raise ValueError("logged policy rates must stay in [0, 1]")
+    if not 0.0 <= effective <= summary.observations:
+        raise ValueError("effective_sample_size must not exceed observations")
+    if summary.observations == 0 and (effective != 0.0 or share != 0.0):
+        raise ValueError("empty logged policy diagnostics must be zero")
+    if summary.observations > 0 and (effective <= 0.0 or share <= 0.0):
+        raise ValueError("non-empty logged policy diagnostics must be positive")
+    if not 0.0 < confidence < 1.0:
+        raise ValueError("logged policy confidence must be in (0, 1)")
+    if (summary.lower is None) != (summary.upper is None):
+        raise ValueError("logged policy interval bounds must both be present or absent")
+    if summary.lower is not None and summary.upper is not None:
+        lower = _finite_float(summary.lower, "logged policy lower")
+        upper = _finite_float(summary.upper, "logged policy upper")
+        if not 0.0 <= lower <= upper <= 1.0:
+            raise ValueError("logged policy interval must stay in [0, 1]")
+    if not isinstance(summary.reason, str):
+        raise ValueError("logged policy reason must be a string")
 
 
 def _gini(values: Sequence[int]) -> float:
@@ -173,6 +281,40 @@ class PolicyBenchmark:
     intervals: Mapping[str, ConfidenceInterval]
     elapsed_seconds: float
 
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.name, str)
+            or not self.name
+            or self.name != self.name.strip()
+            or any(not character.isprintable() for character in self.name)
+        ):
+            raise ValueError("policy name must be a non-empty printable string")
+        if not isinstance(self.report, EvaluationReport):
+            raise ValueError("report must be an EvaluationReport")
+        _validate_evaluation_report(self.report)
+        if not isinstance(self.intervals, Mapping) or set(self.intervals) != set(
+            _BOOTSTRAP_METRICS
+        ):
+            raise ValueError("intervals must contain every benchmark metric exactly once")
+        points = _point_metrics(self.report)
+        normalized: dict[str, ConfidenceInterval] = {}
+        for metric in _BOOTSTRAP_METRICS:
+            interval = self.intervals[metric]
+            if not isinstance(interval, ConfidenceInterval):
+                raise ValueError("intervals must contain ConfidenceInterval values")
+            if interval.observations != self.report.users_evaluated:
+                raise ValueError("interval observations must equal users_evaluated")
+            if not 0.0 <= interval.lower <= interval.upper <= 1.0:
+                raise ValueError("policy intervals must stay in [0, 1]")
+            if not math.isclose(interval.mean, points[metric], rel_tol=1e-12, abs_tol=1e-12):
+                raise ValueError("interval means must match evaluation point estimates")
+            normalized[metric] = interval
+        object.__setattr__(self, "intervals", MappingProxyType(normalized))
+        elapsed = _finite_float(self.elapsed_seconds, "elapsed_seconds")
+        if elapsed < 0.0:
+            raise ValueError("elapsed_seconds must be a finite non-negative number")
+        object.__setattr__(self, "elapsed_seconds", elapsed)
+
     def to_dict(self) -> dict[str, object]:
         return {
             "name": self.name,
@@ -194,6 +336,76 @@ class BenchmarkReport:
     seed: int
     policies: tuple[PolicyBenchmark, ...]
     paired_deltas_from_mosaic: Mapping[str, Mapping[str, ConfidenceInterval]]
+
+    def __post_init__(self) -> None:
+        _lowercase_digest(self.dataset_sha256, "dataset_sha256")
+        if (
+            not isinstance(self.as_of, datetime)
+            or self.as_of.tzinfo is None
+            or self.as_of.utcoffset() is None
+        ):
+            raise ValueError("as_of must be timezone-aware")
+        for name in ("k", "bootstrap_samples"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if isinstance(self.seed, bool) or not isinstance(self.seed, int):
+            raise ValueError("seed must be an integer")
+        confidence = _finite_float(self.confidence, "confidence")
+        if not 0.0 < confidence < 1.0:
+            raise ValueError("confidence must be a finite number in (0, 1)")
+        object.__setattr__(self, "confidence", confidence)
+        try:
+            policies = tuple(islice(self.policies, 1_001))
+        except TypeError as error:
+            raise ValueError("policies must contain PolicyBenchmark values") from error
+        if (
+            not policies
+            or len(policies) > 1_000
+            or any(not isinstance(policy, PolicyBenchmark) for policy in policies)
+        ):
+            raise ValueError("policies must be a non-empty bounded collection")
+        names = [policy.name for policy in policies]
+        if len(names) != len(set(names)) or names[0] != "mosaic":
+            raise ValueError("policies must be unique and begin with mosaic")
+        users = policies[0].report.users_evaluated
+        for policy in policies:
+            if policy.report.k != self.k or policy.report.users_evaluated != users:
+                raise ValueError("policy reports must use the benchmark k and shared users")
+            if any(
+                interval.confidence != self.confidence for interval in policy.intervals.values()
+            ):
+                raise ValueError("policy interval confidence must match the benchmark")
+        object.__setattr__(self, "policies", policies)
+        if not isinstance(self.paired_deltas_from_mosaic, Mapping):
+            raise ValueError("paired deltas must be a mapping")
+        expected_names = set(names[1:])
+        if set(self.paired_deltas_from_mosaic) != expected_names:
+            raise ValueError("paired deltas must correspond to every non-mosaic policy")
+        mosaic_points = _point_metrics(policies[0].report)
+        policy_by_name = {policy.name: policy for policy in policies}
+        paired: dict[str, Mapping[str, ConfidenceInterval]] = {}
+        for name in names[1:]:
+            values = self.paired_deltas_from_mosaic[name]
+            if not isinstance(values, Mapping) or set(values) != set(_BOOTSTRAP_METRICS):
+                raise ValueError("paired deltas must contain every benchmark metric")
+            other_points = _point_metrics(policy_by_name[name].report)
+            frozen: dict[str, ConfidenceInterval] = {}
+            for metric in _BOOTSTRAP_METRICS:
+                interval = values[metric]
+                if not isinstance(interval, ConfidenceInterval):
+                    raise ValueError("paired deltas must contain ConfidenceInterval values")
+                expected = mosaic_points[metric] - other_points[metric]
+                if (
+                    interval.observations != users
+                    or interval.confidence != self.confidence
+                    or not -1.0 <= interval.lower <= interval.upper <= 1.0
+                    or not math.isclose(interval.mean, expected, rel_tol=1e-12, abs_tol=1e-12)
+                ):
+                    raise ValueError("paired delta metadata or mean is inconsistent")
+                frozen[metric] = interval
+            paired[name] = MappingProxyType(frozen)
+        object.__setattr__(self, "paired_deltas_from_mosaic", MappingProxyType(paired))
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -238,6 +450,7 @@ def dataset_fingerprint(articles: Sequence[Article], events: Sequence[Event]) ->
                 "kind": item.kind.value,
                 "occurred_at": item.occurred_at.isoformat(),
                 "propensity": item.propensity,
+                "weight": item.weight,
             }
             for item in sorted(
                 events,
@@ -246,6 +459,8 @@ def dataset_fingerprint(articles: Sequence[Article], events: Sequence[Event]) ->
                     value.user_id,
                     value.article_id,
                     value.kind.value,
+                    0.0 if value.propensity is None else value.propensity,
+                    value.weight,
                 ),
             )
         ],
@@ -454,4 +669,4 @@ Runtime is diagnostic, not a hardware-normalized score.</small></p>
 
 
 def write_benchmark_html(path: str | Path, report: BenchmarkReport) -> None:
-    Path(path).write_text(render_benchmark_html(report), encoding="utf-8", newline="\n")
+    atomic_write_text(path, render_benchmark_html(report))
