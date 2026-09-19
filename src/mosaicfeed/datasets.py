@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 
-from mosaicfeed.models import Article, Event, EventKind
+from mosaicfeed.models import MISSING_MIND_TITLE, Article, Event, EventKind
 
 MAX_MIND_SOURCE_BYTES = 256 * 1024 * 1024
 
@@ -241,13 +241,18 @@ def _parse_mind(
         articles.append(
             Article(
                 id=article_id,
-                title=title,
+                title=title if title.strip() else MISSING_MIND_TITLE,
                 summary=abstract,
                 topics=topics,
-                source=category or "uncategorized",
+                source=category if category.strip() else "uncategorized",
                 published_at=catalog_time,
                 quality=0.5,
                 popularity=0.0,
+                title_missing=not bool(title.strip()),
+                category_missing=not bool(category.strip()),
+                subcategory_missing=not bool(subcategory.strip()),
+                mind_category=category,
+                mind_subcategory=subcategory,
             )
         )
 

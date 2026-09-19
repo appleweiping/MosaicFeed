@@ -11,6 +11,10 @@ That separation prevents an evaluation from silently treating the clicked subset
 `metadata.json`. The metadata records SHA-256 digests of the exact `news.tsv` and `behaviors.tsv` bytes,
 plus the normalized catalog availability instant and behavior-log UTC offset required to replay the conversion.
 MosaicFeed never downloads or redistributes the MIND dataset.
+Empty MIND titles are exported as `title: ""` with `title_missing: true`, not as
+a fabricated headline. The opt-in lexical [text feature contract](text-features.md)
+explains how such records are encoded without confusing the internal marker
+with source text.
 
 ## Score contract
 

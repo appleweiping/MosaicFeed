@@ -9,6 +9,8 @@ from datetime import datetime
 from enum import StrEnum
 from types import MappingProxyType
 
+MISSING_MIND_TITLE = "[missing MIND title]"
+
 
 def _require_identifier(value: str, field_name: str) -> str:
     if not isinstance(value, str):
@@ -70,15 +72,48 @@ class Article:
     published_at: datetime
     quality: float = 0.5
     popularity: float = 0.0
+    title_missing: bool = False
+    category_missing: bool = False
+    subcategory_missing: bool = False
+    mind_category: str | None = None
+    mind_subcategory: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", _require_identifier(self.id, "article id"))
-        object.__setattr__(self, "title", _require_identifier(self.title, "article title"))
+        if not isinstance(self.title_missing, bool):
+            raise ValueError("title_missing must be a boolean")
+        if not isinstance(self.category_missing, bool) or not isinstance(
+            self.subcategory_missing, bool
+        ):
+            raise ValueError("MIND category missing markers must be boolean")
+        if (self.mind_category is None) != (self.mind_subcategory is None):
+            raise ValueError("MIND category and subcategory metadata must occur together")
+        if self.mind_category is not None:
+            if not isinstance(self.mind_category, str) or not isinstance(
+                self.mind_subcategory, str
+            ):
+                raise ValueError("MIND category metadata must be strings")
+            if self.category_missing != (not bool(self.mind_category.strip())) or (
+                self.subcategory_missing != (not bool(self.mind_subcategory.strip()))
+            ):
+                raise ValueError("MIND category missing markers conflict with source fields")
+        if self.title_missing:
+            if self.title != MISSING_MIND_TITLE:
+                raise ValueError("missing MIND title requires the internal marker")
+        else:
+            object.__setattr__(self, "title", _require_identifier(self.title, "article title"))
         object.__setattr__(self, "source", _require_identifier(self.source, "article source"))
         if not isinstance(self.summary, str):
             raise ValueError("article summary must be a string")
         object.__setattr__(self, "summary", self.summary.strip())
-        object.__setattr__(self, "topics", _normalized_labels(self.topics))
+        normalized_topics = _normalized_labels(self.topics)
+        if self.mind_category is not None and self.mind_subcategory is not None:
+            raw_topics = tuple(
+                value for value in (self.mind_category, self.mind_subcategory) if value.strip()
+            ) or ("uncategorized",)
+            if normalized_topics != _normalized_labels(raw_topics):
+                raise ValueError("MIND source fields conflict with article topics")
+        object.__setattr__(self, "topics", normalized_topics)
         object.__setattr__(self, "published_at", _require_aware(self.published_at, "published_at"))
         object.__setattr__(self, "quality", _unit_interval(self.quality, "quality"))
         object.__setattr__(self, "popularity", _unit_interval(self.popularity, "popularity"))

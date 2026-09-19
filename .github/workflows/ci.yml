@@ -63,6 +63,28 @@ jobs:
             --model click-model-smoke.json --articles examples/articles.json \
             --events examples/events.json --user alex \
             --as-of 2026-08-30T12:00:00Z --k 3 --output click-ranking-smoke.json
+          uv run --locked mosaicfeed train-click-model \
+            --articles examples/articles.json --events examples/text-events.json \
+            --as-of 2026-08-30T12:00:00Z --epochs 3 --text-features \
+            --text-vocabulary-articles examples/text-vocabulary-articles.json \
+            --output click-text-model-smoke.json
+          uv run --locked mosaicfeed rank-click-model \
+            --model click-text-model-smoke.json --articles examples/articles.json \
+            --events examples/text-events.json --user alex \
+            --as-of 2026-08-30T12:00:00Z --k 3 --output click-text-ranking-smoke.json
+          uv run --locked python - <<'PY'
+          import json
+          from pathlib import Path
+          legacy = json.loads(Path('click-model-smoke.json').read_text(encoding='utf-8'))
+          text = json.loads(Path('click-text-model-smoke.json').read_text(encoding='utf-8'))
+          ranking = json.loads(Path('click-text-ranking-smoke.json').read_text(encoding='utf-8'))
+          assert legacy['schema_version'] == 1 and 'text_encoder' not in legacy
+          assert text['schema_version'] == 2 and 'text_affinity' in text['feature_names']
+          assert text['text_encoder']['source_kind'] == 'declared-training-snapshot'
+          assert len(set(text['text_encoder']['inverse_document_frequency'])) > 1
+          assert text['weights'][-1] != 0
+          assert ranking['predictions']
+          PY
           uv run --locked mosaicfeed serve-click-model --help
       - if: matrix.python-version == '3.11'
         name: Run incremental event-stream smoke test
@@ -105,3 +127,14 @@ jobs:
           .ci-wheel-check/bin/mosaicfeed --help
           .ci-wheel-check/bin/mosaicfeed serve-click-model --help
           .ci-wheel-check/bin/mosaicfeed stream-replay --help
+          .ci-wheel-check/bin/mosaicfeed train-click-model \
+            --articles examples/articles.json --events examples/text-events.json \
+            --as-of 2026-08-30T12:00:00Z --epochs 3 --text-features \
+            --text-vocabulary-articles examples/text-vocabulary-articles.json \
+            --output click-text-wheel-smoke.json
+          .ci-wheel-check/bin/mosaicfeed rank-click-model \
+            --model click-text-wheel-smoke.json --articles examples/articles.json \
+            --events examples/text-events.json --user alex \
+            --as-of 2026-08-30T12:00:00Z --k 3 \
+            --output click-text-wheel-ranking-smoke.json
+          .ci-wheel-check/bin/python -c "import json; from pathlib import Path; assert json.loads(Path('click-text-wheel-smoke.json').read_text())['schema_version'] == 2; assert len(json.loads(Path('click-text-wheel-ranking-smoke.json').read_text())['predictions']) == 3"

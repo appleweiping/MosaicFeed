@@ -23,10 +23,15 @@ def _sdist_files(version: str) -> dict[str, bytes]:
         f"{root}/PKG-INFO": f"Name: mosaicfeed\nVersion: {version}\n".encode(),
         f"{root}/docs/event-stream.md": b"events\n",
         f"{root}/docs/http-inference.md": b"http\n",
+        f"{root}/docs/text-features.md": b"text\n",
+        f"{root}/examples/text-events.json": b"[]\n",
+        f"{root}/examples/text-vocabulary-articles.json": b"[]\n",
         f"{root}/scripts/verify_distributions.py": b"# verifier\n",
         f"{root}/scripts/verify_branch_coverage.py": b"# coverage gate\n",
         f"{root}/src/mosaicfeed/event_stream.py": b"# events\n",
         f"{root}/src/mosaicfeed/server.py": b"# server\n",
+        f"{root}/src/mosaicfeed/text_features.py": b"# text\n",
+        f"{root}/tests/test_text_features.py": b"# text tests\n",
     }
 
 
@@ -51,6 +56,7 @@ def _wheel_files(version: str) -> dict[str, bytes]:
         "mosaicfeed/event_stream.py": b"# events\n",
         "mosaicfeed/py.typed": b"",
         "mosaicfeed/server.py": b"# server\n",
+        "mosaicfeed/text_features.py": b"# text\n",
         f"{metadata}/METADATA": f"Name: mosaicfeed\nVersion: {version}\n".encode(),
         f"{metadata}/RECORD": b"",
         f"{metadata}/WHEEL": b"Wheel-Version: 1.0\n",
@@ -133,6 +139,23 @@ def test_minimal_valid_distribution_archives_pass(tmp_path: Path) -> None:
 
     verify_sdist(sdist, version=version)
     verify_wheel(wheel, version=version)
+
+
+def test_text_feature_slice_is_required_in_both_archives(tmp_path: Path) -> None:
+    version = "0.5.0"
+    sdist_files = _sdist_files(version)
+    del sdist_files[f"mosaicfeed-{version}/docs/text-features.md"]
+    sdist = tmp_path / "without-text-docs.tar.gz"
+    _write_sdist(sdist, sdist_files)
+    with pytest.raises(ValueError, match="missing required files"):
+        verify_sdist(sdist, version=version)
+
+    wheel_files = _wheel_files(version)
+    del wheel_files["mosaicfeed/text_features.py"]
+    wheel = tmp_path / "without-text-code.whl"
+    _write_wheel(wheel, wheel_files)
+    with pytest.raises(ValueError, match="missing required files"):
+        verify_wheel(wheel, version=version)
 
 
 def test_real_archives_reject_extended_windows_device_names(tmp_path: Path) -> None:

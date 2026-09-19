@@ -32,6 +32,7 @@ from mosaicfeed.server import (
     create_rank_server,
     load_click_rank_service,
 )
+from mosaicfeed.text_features import NewsTextEncoder, TextFeatureConfig
 
 __all__ = [
     "Article",
@@ -55,11 +56,13 @@ __all__ = [
     "MindDataset",
     "MindEvaluationReport",
     "MindImpression",
+    "NewsTextEncoder",
     "PointwiseLogisticRanker",
     "ProfileEventStore",
     "RankResult",
     "Recommendation",
     "ServingLimits",
+    "TextFeatureConfig",
     "UserProfile",
     "bootstrap_mean",
     "build_feed",
@@ -73,4 +76,4 @@ __all__ = [
     "run_policy_benchmark",
 ]
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"

@@ -30,6 +30,7 @@ from mosaicfeed.io import (
 from mosaicfeed.learning import (
     MODEL_FORMAT,
     MODEL_SCHEMA_VERSION,
+    TEXT_MODEL_SCHEMA_VERSION,
     ClickPrediction,
     PointwiseLogisticRanker,
 )
@@ -253,7 +254,11 @@ class ClickRankService:
             },
             "model": {
                 "format": MODEL_FORMAT,
-                "schema_version": MODEL_SCHEMA_VERSION,
+                "schema_version": (
+                    TEXT_MODEL_SCHEMA_VERSION
+                    if self._model.text_encoder is not None
+                    else MODEL_SCHEMA_VERSION
+                ),
                 "training_examples_sha256": self._model.training_sha256,
             },
             "object": "mosaicfeed.inference_metadata",

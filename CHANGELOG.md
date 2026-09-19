@@ -6,6 +6,21 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.6.0] - 2026-09-19
+
+### Added
+
+- Added an opt-in, inspectable TF-IDF news-text encoder and `text_affinity`
+  feature for click-model training, with a versioned, checksummed schema-2
+  model; the seven-feature schema-1 default remains unchanged.
+- Added a declared training-news vocabulary snapshot with first-event
+  availability checks and persisted provenance, plus a conservative
+  first-event-only fallback when no snapshot is supplied.
+- Preserved MIND category and subcategory in separate text namespaces,
+  including identical labels, without changing legacy topic-profile semantics.
+- Added bounded text parsing, model validation, regression/property tests,
+  end-to-end CLI examples, documentation, and cross-platform CI smoke tests.
+
 ## [0.5.0] - 2026-09-19
 
 ### Added

@@ -45,6 +45,11 @@ The label contract is observable feedback, not causal relevance: click/like is
 one and view/hide is zero. The model therefore reports itself as pointwise. It
 does not infer counterfactual outcomes for candidates absent from the log.
 
+The opt-in text feature schema is documented in [text-features.md](text-features.md).
+It freezes a caller-declared training-news snapshot at the earliest eligible
+event (or uses the first event's article as a conservative fallback), excludes
+held-out news from IDF, and adds text evidence only after prior user events.
+
 ## Incremental-event boundary
 
 The versioned interaction log is authoritative and append-only. One canonical

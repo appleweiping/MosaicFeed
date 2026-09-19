@@ -90,10 +90,15 @@ def verify_sdist(path: Path, *, version: str) -> None:
         f"{expected_root}/PKG-INFO",
         f"{expected_root}/docs/event-stream.md",
         f"{expected_root}/docs/http-inference.md",
+        f"{expected_root}/docs/text-features.md",
+        f"{expected_root}/examples/text-events.json",
+        f"{expected_root}/examples/text-vocabulary-articles.json",
         f"{expected_root}/scripts/verify_distributions.py",
         f"{expected_root}/scripts/verify_branch_coverage.py",
         f"{expected_root}/src/mosaicfeed/event_stream.py",
         f"{expected_root}/src/mosaicfeed/server.py",
+        f"{expected_root}/src/mosaicfeed/text_features.py",
+        f"{expected_root}/tests/test_text_features.py",
     }
     with tarfile.open(path, mode="r:gz") as archive:
         members = archive.getmembers()
@@ -135,6 +140,7 @@ def verify_wheel(path: Path, *, version: str) -> None:
         "mosaicfeed/event_stream.py",
         "mosaicfeed/py.typed",
         "mosaicfeed/server.py",
+        "mosaicfeed/text_features.py",
         f"{expected_dist_info}/METADATA",
         f"{expected_dist_info}/RECORD",
         f"{expected_dist_info}/WHEEL",

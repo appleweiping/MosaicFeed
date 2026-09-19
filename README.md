@@ -397,6 +397,15 @@ event-time feature/label matrix consumed by SGD. Because the event log does
 not necessarily contain complete candidate sets, this model is explicitly
 pointwise and does not claim a pairwise/listwise or causal objective.
 
+An opt-in `train-click-model --text-features` path adds a frozen, bounded
+title/category/subcategory TF-IDF vocabulary and a prior-history text affinity
+feature for cold-start news; the default seven-feature model and schema remain
+unchanged. Provide `--text-vocabulary-articles train-news.json` for a declared,
+multi-document training-news snapshot available before the first training
+event; without it, the safe fallback uses only that first event's article.
+See the [text feature contract](docs/text-features.md) for MIND
+empty-title handling, leakage boundaries, and limitations.
+
 ### Local HTTP inference
 
 `serve-click-model` loads and validates a fitted model, catalog, and history once,

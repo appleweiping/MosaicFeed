@@ -27,6 +27,10 @@ def render_feed_html(
     cards: list[str] = []
     for item in feed.recommendations:
         article = articles[item.article_id]
+        display_title = (
+            "Title unavailable (source field empty)" if article.title_missing else article.title
+        )
+        title_marker = ' data-title-missing="true"' if article.title_missing else ""
         breakdown = item.breakdown
         components = (
             ("interest", breakdown.interest),
@@ -47,7 +51,7 @@ def render_feed_html(
               <div class="rank">#{item.rank}</div>
               <div class="body">
                 <div class="eyebrow">{_escape(article.source)} · {_escape(article.published_at.date())}</div>
-                <h2>{_escape(article.title)}</h2>
+                <h2{title_marker}>{_escape(display_title)}</h2>
                 <p>{_escape(article.summary)}</p>
                 <div class="chips">{topics}</div>
                 <div class="scoreline"><strong>{item.score:.3f}</strong><span>ranking score before diversity reranking</span></div>

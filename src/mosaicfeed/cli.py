@@ -53,6 +53,7 @@ from mosaicfeed.server import (
     serve_rank_server,
 )
 from mosaicfeed.simulation import generate_synthetic
+from mosaicfeed.text_features import TextFeatureConfig
 
 
 def _clock(value: str | None) -> datetime:
@@ -82,9 +83,9 @@ def _article_record(article: object) -> dict[str, object]:
 
     if not isinstance(article, Article):
         raise TypeError("article must be an Article")
-    return {
+    result = {
         "id": article.id,
-        "title": article.title,
+        "title": "" if article.title_missing else article.title,
         "summary": article.summary,
         "topics": list(article.topics),
         "source": article.source,
@@ -92,6 +93,16 @@ def _article_record(article: object) -> dict[str, object]:
         "quality": article.quality,
         "popularity": article.popularity,
     }
+    if article.title_missing:
+        result["title_missing"] = True
+    if article.category_missing:
+        result["category_missing"] = True
+    if article.subcategory_missing:
+        result["subcategory_missing"] = True
+    if article.mind_category is not None:
+        result["mind_category"] = article.mind_category
+        result["mind_subcategory"] = article.mind_subcategory
+    return result
 
 
 def _event_record(event: object) -> dict[str, object]:
@@ -304,6 +315,15 @@ def _parser() -> argparse.ArgumentParser:
     train_click.add_argument("--learning-rate", type=float, default=0.05)
     train_click.add_argument("--l2", type=float, default=0.001)
     train_click.add_argument("--seed", type=int, default=17)
+    train_click.add_argument(
+        "--text-features", action="store_true", help="fit a training-only news TF-IDF vocabulary"
+    )
+    train_click.add_argument("--text-max-vocabulary", type=int, default=8_192)
+    train_click.add_argument("--text-min-document-frequency", type=int, default=1)
+    train_click.add_argument(
+        "--text-vocabulary-articles",
+        help="declared training-news JSON snapshot visible before the first training event",
+    )
 
     rank_click = subcommands.add_parser(
         "rank-click-model",
@@ -604,6 +624,7 @@ def _run(argv: Sequence[str] | None = None) -> int:
                 "articles": args.articles,
                 "config": args.config,
                 "events": args.events,
+                "text-vocabulary-articles": args.text_vocabulary_articles,
                 "output": args.output,
             }
         )
@@ -617,16 +638,35 @@ def _run(argv: Sequence[str] | None = None) -> int:
             load_events(args.events),
             as_of=_clock(args.as_of),
             config=_config(args.config),
+            text_features=args.text_features,
+            text_config=(
+                TextFeatureConfig(
+                    max_vocabulary=args.text_max_vocabulary,
+                    min_document_frequency=args.text_min_document_frequency,
+                )
+                if args.text_features
+                else None
+            ),
+            text_vocabulary_articles=(
+                load_articles(args.text_vocabulary_articles)
+                if args.text_vocabulary_articles is not None
+                else None
+            ),
         )
         model.save(args.output)
+        result: dict[str, object] = {
+            "model": str(args.output),
+            "training_examples": model.training_examples,
+            "training_sha256": model.training_sha256,
+            "weights": model.weights,
+        }
+        if model.text_encoder is not None:
+            result["text_vocabulary_size"] = len(model.text_encoder.vocabulary)
+            result["text_training_articles_sha256"] = model.text_encoder.training_articles_sha256
+            result["text_vocabulary_source"] = model.text_encoder.source_kind
         print(
             json.dumps(
-                {
-                    "model": str(args.output),
-                    "training_examples": model.training_examples,
-                    "training_sha256": model.training_sha256,
-                    "weights": model.weights,
-                },
+                result,
                 sort_keys=True,
             )
         )

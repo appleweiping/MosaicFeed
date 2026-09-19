@@ -1,0 +1,4 @@
+[
+  {"id":"article-grid-basics","title":"A visual guide to neighborhood power grids","summary":"How local substations, feeders, and flexible demand interact.","topics":["energy","education"],"source":"Beacon","published_at":"2026-08-15T09:00:00Z","quality":0.82,"popularity":0.72},
+  {"id":"article-grid-flex","title":"Flexible loads as a grid resource","summary":"A field study of scheduling heat pumps and vehicle charging.","topics":["energy","climate"],"source":"Dispatch","published_at":"2026-08-28T07:00:00Z","quality":0.90,"popularity":0.68}
+]

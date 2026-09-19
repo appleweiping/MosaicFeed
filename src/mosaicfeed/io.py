@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, NoReturn, TypeVar, cast
 
-from mosaicfeed.models import Article, Event, EventKind, Feed, ScoreBreakdown
+from mosaicfeed.models import MISSING_MIND_TITLE, Article, Event, EventKind, Feed, ScoreBreakdown
 
 _PathT = TypeVar("_PathT", str, Path)
 MAX_JSON_NESTING = 256
@@ -134,6 +134,11 @@ def _articles_from_records(records: Iterable[dict[str, Any]]) -> list[Article]:
         "published_at",
         "quality",
         "popularity",
+        "title_missing",
+        "category_missing",
+        "subcategory_missing",
+        "mind_category",
+        "mind_subcategory",
     }
     required = {"id", "title", "topics", "source", "published_at"}
     for record in records:
@@ -141,16 +146,33 @@ def _articles_from_records(records: Iterable[dict[str, Any]]) -> list[Article]:
         topics = record["topics"]
         if not isinstance(topics, list) or not all(isinstance(value, str) for value in topics):
             raise ValueError("article topics must be a list of strings")
+        title_missing = record.get("title_missing", False)
+        if not isinstance(title_missing, bool):
+            raise ValueError("article title_missing must be a boolean")
+        category_missing = record.get("category_missing", False)
+        subcategory_missing = record.get("subcategory_missing", False)
+        if not isinstance(category_missing, bool) or not isinstance(subcategory_missing, bool):
+            raise ValueError("article category missing markers must be boolean")
+        title = _text(record["title"], "article title")
+        if title_missing:
+            if title != "":
+                raise ValueError("missing MIND title must export as an empty string")
+            title = MISSING_MIND_TITLE
         result.append(
             Article(
                 id=_text(record["id"], "article id"),
-                title=_text(record["title"], "article title"),
+                title=title,
                 summary=_text(record.get("summary", ""), "article summary"),
                 topics=tuple(topics),
                 source=_text(record["source"], "article source"),
                 published_at=parse_datetime(record["published_at"], "published_at"),
                 quality=_number(record.get("quality", 0.5), "quality"),
                 popularity=_number(record.get("popularity", 0.0), "popularity"),
+                title_missing=title_missing,
+                category_missing=category_missing,
+                subcategory_missing=subcategory_missing,
+                mind_category=record.get("mind_category"),
+                mind_subcategory=record.get("mind_subcategory"),
             )
         )
     ids = [article.id for article in result]

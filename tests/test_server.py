@@ -157,6 +157,7 @@ def test_health_metadata_and_rank_use_real_loopback_http() -> None:
         assert metadata["catalog_articles"] == 4
         assert metadata["history_events"] == 4
         assert metadata["model"]["format"] == "mosaicfeed.pointwise-logistic"
+        assert metadata["model"]["schema_version"] == 1
         assert len(metadata["model"]["training_examples_sha256"]) == 64
         assert "at or before" in metadata["time_semantics"]
 
@@ -171,6 +172,7 @@ def test_health_metadata_and_rank_use_real_loopback_http() -> None:
         assert first[2] == second[2]
         ranked = json.loads(first[2])
         assert ranked["object"] == "mosaicfeed.click_ranking"
+
         assert ranked["as_of"] == "2026-01-04T00:00:00Z"
         assert ranked["candidate_count"] == 2
         assert ranked["requested_k"] == 2
@@ -187,6 +189,25 @@ def test_health_metadata_and_rank_use_real_loopback_http() -> None:
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
         assert status == 200
+
+
+def test_text_model_metadata_reports_its_actual_schema() -> None:
+    articles = catalog()
+    events = history()
+    model = PointwiseLogisticRanker(epochs=3, seed=7).fit(
+        articles,
+        events,
+        as_of=AS_OF,
+        text_features=True,
+        text_vocabulary_articles=articles,
+    )
+    snapshot = ClickRankService(model, articles, events)
+    assert model.to_state()["schema_version"] == 2
+    assert snapshot.metadata()["model"]["schema_version"] == 2
+    with running_server(snapshot) as server:
+        status, _, body = request(server, "GET", "/metadata")
+        assert status == 200
+        assert json.loads(body)["model"]["schema_version"] == 2
 
 
 def test_equal_concurrent_requests_are_thread_safe_and_byte_stable() -> None:
@@ -506,7 +527,9 @@ def test_large_valid_history_is_cooperatively_cancelled_and_releases_worker() ->
         ServingLimits(),
         max_history_events=100_000,
         max_concurrency=1,
-        request_timeout_seconds=0.001,
+        # The injected clock tests the deadline; keep the real socket timeout
+        # long enough for a complete request on slower Windows CI hosts.
+        request_timeout_seconds=1.0,
     )
     repeated_event = Event("bulk-user", "positive", EventKind.CLICK, AS_OF)
     large_service = service(events=[repeated_event] * 100_000, limits=limits)
@@ -516,7 +539,7 @@ def test_large_valid_history_is_cooperatively_cancelled_and_releases_worker() ->
 
         def __call__(self) -> float:
             self.calls += 1
-            return 0.0 if self.calls <= 10 else 0.002
+            return 0.0 if self.calls <= 10 else 2.0
 
     clock = ExpiringClock()
     with running_server(large_service) as server:

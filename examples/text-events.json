@@ -1,0 +1,5 @@
+[
+  {"user_id":"alex","article_id":"article-grid-basics","kind":"click","occurred_at":"2026-08-28T09:00:00Z","propensity":0.42},
+  {"user_id":"alex","article_id":"article-grid-flex","kind":"hide","occurred_at":"2026-08-29T13:00:00Z","propensity":0.51},
+  {"user_id":"alex","article_id":"article-grid-basics","kind":"click","occurred_at":"2026-08-30T07:30:00Z","propensity":0.42}
+]
