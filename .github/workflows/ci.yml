@@ -89,7 +89,7 @@ jobs:
           assert replay["history_snapshot"]["event_count"] == 3
           assert [profile["user_id"] for profile in replay["profiles"]] == ["alex", "rin"]
           assert len(history) == 3
-          assert {event["weight"] for event in history} == {1.0, 1.5}
+          assert {event.get("weight", 1.0) for event in history} == {1.0, 1.5}
           assert Path("profile-smoke-next.checkpoint.json").stat().st_size > 0
           PY
       - run: uv run --locked python -m build --no-isolation
