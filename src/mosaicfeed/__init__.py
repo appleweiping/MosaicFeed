@@ -24,6 +24,7 @@ from mosaicfeed.event_stream import (
 from mosaicfeed.learning import ClickPrediction, PointwiseLogisticRanker
 from mosaicfeed.mind import MindEvaluationReport, evaluate_mind_impressions
 from mosaicfeed.models import Article, Event, EventKind, Feed, Recommendation, UserProfile
+from mosaicfeed.pairwise import PairwiseImpressionRanker, PairwiseTrainingSummary
 from mosaicfeed.pipeline import build_feed
 from mosaicfeed.server import (
     ClickRankService,
@@ -57,6 +58,8 @@ __all__ = [
     "MindEvaluationReport",
     "MindImpression",
     "NewsTextEncoder",
+    "PairwiseImpressionRanker",
+    "PairwiseTrainingSummary",
     "PointwiseLogisticRanker",
     "ProfileEventStore",
     "RankResult",
@@ -76,4 +79,4 @@ __all__ = [
     "run_policy_benchmark",
 ]
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"

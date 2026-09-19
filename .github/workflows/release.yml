@@ -63,6 +63,7 @@ jobs:
           .release-wheel-check/bin/mosaicfeed --version
           .release-wheel-check/bin/mosaicfeed serve-click-model --help
           .release-wheel-check/bin/mosaicfeed stream-replay --help
+          .release-wheel-check/bin/mosaicfeed train-pairwise-model --help
       - name: Verify the source distribution in a clean environment
         shell: bash
         run: |
@@ -72,6 +73,7 @@ jobs:
           .release-sdist-check/bin/mosaicfeed --version
           .release-sdist-check/bin/mosaicfeed serve-click-model --help
           .release-sdist-check/bin/mosaicfeed stream-replay --help
+          .release-sdist-check/bin/mosaicfeed train-pairwise-model --help
       - name: Generate runtime dependency SBOM
         shell: bash
         run: >-

@@ -32,6 +32,7 @@ A useful feed is a slate, not a sorted column. A pure relevance ranking can repe
 - Temporal leave-last-out evaluation with NDCG, hit rate, MRR, intra-list diversity, source diversity, catalog coverage, exposure Gini, and self-normalized IPS CTR.
 - Paired policy benchmarks against popularity, recency, and unconstrained-relevance baselines with deterministic bootstrap confidence intervals.
 - A fitted pointwise logistic click/like ranker whose training features are built only from each event's prior history, with strict portable model state.
+- An opt-in impression-aware pairwise ranker for clicked versus displayed-unclicked MIND candidates, with raw-logit scores and a disjoint post-cutoff evaluation workflow.
 - A bounded, deterministic HTTP inference API over a frozen model/catalog/history snapshot, with loopback-safe defaults and optional bearer authentication.
 - A versioned append-only interaction stream with idempotent ingestion, per-user watermarks, incremental profile updates, deterministic late-event rebuilds, and checksummed checkpoint/replay.
 - Strict JSON/JSONL validation, CLI workflows, synthetic-data generation, and portable HTML reports.
@@ -405,6 +406,11 @@ multi-document training-news snapshot available before the first training
 event; without it, the safe fallback uses only that first event's article.
 See the [text feature contract](docs/text-features.md) for MIND
 empty-title handling, leakage boundaries, and limitations.
+
+For a distinct within-impression objective, see the
+[pairwise impression contract](docs/pairwise-impressions.md). It keeps every
+displayed candidate for MIND score round trips, requires an explicit training
+partition and cutoff, and reports raw logits rather than click probabilities.
 
 ### Local HTTP inference
 

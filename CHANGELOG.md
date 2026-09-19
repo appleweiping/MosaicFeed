@@ -6,6 +6,28 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.7.0] - 2026-09-19
+
+### Added
+
+- Added a typed, opt-in `PairwiseImpressionRanker` that learns from clicked
+  versus displayed-unclicked candidates within the same MIND impression.
+  Same-timestamp impressions share strictly prior history; the pointwise
+  schema-1/2 models and default workflows remain unchanged.
+- Added bounded pairwise train/rank/evaluate CLI workflows with explicit
+  training partition and cutoff, held-out validation, checksummed model state,
+  source-file provenance, and candidate-lossless MIND logit score round trips.
+- Added independent one-step and exhaustive tiny-impression SGD oracles,
+  leakage and corruption regressions, resource/adversarial tests, and the
+  [pairwise impression contract](docs/pairwise-impressions.md).
+
+### Limitations
+
+- Pairwise scores are raw ordering logits, not calibrated click probabilities.
+  This release does not add pairwise text vocabulary fitting, a neural news
+  model, or an official MIND-small benchmark result; no licensed dataset rows
+  are bundled.
+
 ## [0.6.0] - 2026-09-19
 
 ### Added

@@ -127,6 +127,8 @@ jobs:
           .ci-wheel-check/bin/mosaicfeed --help
           .ci-wheel-check/bin/mosaicfeed serve-click-model --help
           .ci-wheel-check/bin/mosaicfeed stream-replay --help
+          .ci-wheel-check/bin/mosaicfeed train-pairwise-model --help
+          .ci-wheel-check/bin/python -c "from mosaicfeed import PairwiseImpressionRanker; assert PairwiseImpressionRanker(epochs=1).is_fitted is False"
           .ci-wheel-check/bin/mosaicfeed train-click-model \
             --articles examples/articles.json --events examples/text-events.json \
             --as-of 2026-08-30T12:00:00Z --epochs 3 --text-features \
