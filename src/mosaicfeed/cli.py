@@ -36,6 +36,7 @@ from mosaicfeed.io import (
     write_json,
 )
 from mosaicfeed.learning import PointwiseLogisticRanker
+from mosaicfeed.listwise import ListwiseImpressionRanker
 from mosaicfeed.metrics import evaluate_leave_last_out
 from mosaicfeed.mind import (
     evaluate_mind_impressions,
@@ -73,7 +74,7 @@ def _pairwise_source_sha(path: str, *, output: bool = False) -> str:
         while block := stream.read(1024 * 1024):
             size += len(block)
             if not output and size > MAX_PAIRWISE_INPUT_BYTES:
-                raise ValueError("pairwise source exceeds input size limit")
+                raise ValueError("impression source exceeds input size limit")
             digest.update(block)
     return digest.hexdigest()
 
@@ -373,41 +374,42 @@ def _parser() -> argparse.ArgumentParser:
     rank_click.add_argument("--k", type=int, default=10)
     rank_click.add_argument("--output")
 
-    train_pairwise = subcommands.add_parser(
-        "train-pairwise-model", help="fit a within-impression logit ranker"
-    )
-    train_pairwise.add_argument("--articles", required=True)
-    train_pairwise.add_argument("--impressions", required=True)
-    train_pairwise.add_argument("--partition", required=True)
-    train_pairwise.add_argument("--cutoff", required=True)
-    train_pairwise.add_argument("--held-out-impressions")
-    train_pairwise.add_argument("--config")
-    train_pairwise.add_argument("--output", required=True)
-    train_pairwise.add_argument("--epochs", type=int, default=20)
-    train_pairwise.add_argument("--learning-rate", type=float, default=0.05)
-    train_pairwise.add_argument("--l2", type=float, default=0.001)
-    train_pairwise.add_argument("--seed", type=int, default=17)
+    for objective in ("pairwise", "listwise"):
+        trainer = subcommands.add_parser(
+            f"train-{objective}-model", help="fit a within-impression logit ranker"
+        )
+        trainer.add_argument("--articles", required=True)
+        trainer.add_argument("--impressions", required=True)
+        trainer.add_argument("--partition", required=True)
+        trainer.add_argument("--cutoff", required=True)
+        trainer.add_argument("--held-out-impressions")
+        trainer.add_argument("--config")
+        trainer.add_argument("--output", required=True)
+        trainer.add_argument("--epochs", type=int, default=20)
+        trainer.add_argument("--learning-rate", type=float, default=0.05)
+        trainer.add_argument("--l2", type=float, default=0.001)
+        trainer.add_argument("--seed", type=int, default=17)
 
-    rank_pairwise = subcommands.add_parser(
-        "rank-pairwise-model", help="write candidate-lossless raw MIND logits"
-    )
-    rank_pairwise.add_argument("--model", required=True)
-    rank_pairwise.add_argument("--articles", required=True)
-    rank_pairwise.add_argument("--training-impressions", required=True)
-    rank_pairwise.add_argument("--impressions", required=True)
-    rank_pairwise.add_argument("--scores-output", required=True)
-    rank_pairwise.add_argument("--report-output")
+        ranker = subcommands.add_parser(
+            f"rank-{objective}-model", help="write candidate-lossless raw MIND logits"
+        )
+        ranker.add_argument("--model", required=True)
+        ranker.add_argument("--articles", required=True)
+        ranker.add_argument("--training-impressions", required=True)
+        ranker.add_argument("--impressions", required=True)
+        ranker.add_argument("--scores-output", required=True)
+        ranker.add_argument("--report-output")
 
-    evaluate_pairwise = subcommands.add_parser(
-        "evaluate-pairwise-model", help="score and evaluate a post-cutoff MIND split"
-    )
-    evaluate_pairwise.add_argument("--model", required=True)
-    evaluate_pairwise.add_argument("--articles", required=True)
-    evaluate_pairwise.add_argument("--training-impressions", required=True)
-    evaluate_pairwise.add_argument("--impressions", required=True)
-    evaluate_pairwise.add_argument("--scores-output", required=True)
-    evaluate_pairwise.add_argument("--cutoff", action="append", type=int, dest="cutoffs")
-    evaluate_pairwise.add_argument("--output")
+        evaluator = subcommands.add_parser(
+            f"evaluate-{objective}-model", help="score and evaluate a post-cutoff MIND split"
+        )
+        evaluator.add_argument("--model", required=True)
+        evaluator.add_argument("--articles", required=True)
+        evaluator.add_argument("--training-impressions", required=True)
+        evaluator.add_argument("--impressions", required=True)
+        evaluator.add_argument("--scores-output", required=True)
+        evaluator.add_argument("--cutoff", action="append", type=int, dest="cutoffs")
+        evaluator.add_argument("--output")
 
     serve_click = subcommands.add_parser(
         "serve-click-model",
@@ -770,7 +772,11 @@ def _run(argv: Sequence[str] | None = None) -> int:
         else:
             print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
-    if args.command == "train-pairwise-model":
+    if args.command in {"train-pairwise-model", "train-listwise-model"}:
+        objective = args.command.split("-")[1]
+        model_type = (
+            PairwiseImpressionRanker if objective == "pairwise" else ListwiseImpressionRanker
+        )
         _require_distinct_paths(
             {
                 "articles": args.articles,
@@ -790,7 +796,7 @@ def _run(argv: Sequence[str] | None = None) -> int:
         if args.held_out_impressions is not None:
             source_hashes["held_out_impressions"] = _pairwise_source_sha(args.held_out_impressions)
             held_out_records = load_mind_impressions(args.held_out_impressions)
-        pairwise_model = PairwiseImpressionRanker(
+        impression_model = model_type(
             epochs=args.epochs,
             learning_rate=args.learning_rate,
             l2=args.l2,
@@ -817,22 +823,31 @@ def _run(argv: Sequence[str] | None = None) -> int:
                 and _pairwise_source_sha(args.config) != source_hashes["config"]
             )
         ):
-            raise ValueError("pairwise source changed while training")
-        pairwise_model.save(args.output)
+            raise ValueError(f"{objective} source changed while training")
+        impression_model.save(args.output)
         print(
             json.dumps(
                 {
                     "model": str(args.output),
-                    "objective": "pairwise-impression",
+                    "objective": f"{objective}-impression",
                     "score_semantics": "raw logit; not probability",
-                    "training": pairwise_model.training.to_dict(),
-                    "weights": pairwise_model.weights,
+                    "training": impression_model.training.to_dict(),
+                    "weights": impression_model.weights,
                 },
                 sort_keys=True,
             )
         )
         return 0
-    if args.command in {"rank-pairwise-model", "evaluate-pairwise-model"}:
+    if args.command in {
+        "rank-pairwise-model",
+        "evaluate-pairwise-model",
+        "rank-listwise-model",
+        "evaluate-listwise-model",
+    }:
+        objective = args.command.split("-")[1]
+        model_type = (
+            PairwiseImpressionRanker if objective == "pairwise" else ListwiseImpressionRanker
+        )
         _require_distinct_paths(
             {
                 "model": args.model,
@@ -844,21 +859,21 @@ def _run(argv: Sequence[str] | None = None) -> int:
                 "output": getattr(args, "output", None),
             }
         )
-        pairwise_model = PairwiseImpressionRanker.load(args.model)
+        impression_model = model_type.load(args.model)
         article_sha = _pairwise_source_sha(args.articles)
         training_sha = _pairwise_source_sha(args.training_impressions)
         target_sha = _pairwise_source_sha(args.impressions)
-        fitted_sources = pairwise_model.training.source_sha256
+        fitted_sources = impression_model.training.source_sha256
         if fitted_sources.get("articles") != article_sha or (
             fitted_sources.get("impressions") != training_sha
         ):
-            raise ValueError("pairwise source files differ from fitted training sources")
+            raise ValueError(f"{objective} source files differ from fitted training sources")
         declared_holdout = fitted_sources.get("held_out_impressions")
         if declared_holdout is not None and declared_holdout != target_sha:
             raise ValueError("held-out source differs from declared training holdout")
         training_records = load_mind_impressions(args.training_impressions)
         target_records = load_mind_impressions(args.impressions)
-        scores = pairwise_model.score_impressions(
+        scores = impression_model.score_impressions(
             load_articles(args.articles),
             target_records,
             training_impressions=training_records,
@@ -868,17 +883,17 @@ def _run(argv: Sequence[str] | None = None) -> int:
             or _pairwise_source_sha(args.training_impressions) != training_sha
             or _pairwise_source_sha(args.impressions) != target_sha
         ):
-            raise ValueError("pairwise source changed while scoring")
+            raise ValueError(f"{objective} source changed while scoring")
         rows = _pairwise_scores_rows(target_records, scores)
         scores_text = json_text(rows)
         scores_bytes = scores_text.encode("utf-8")
         if len(scores_bytes) > MAX_PAIRWISE_SCORE_BYTES:
-            raise ValueError("pairwise scores exceed output size limit")
-        if args.command == "rank-pairwise-model":
+            raise ValueError(f"{objective} scores exceed output size limit")
+        if args.command.startswith("rank-"):
             payload = {
-                "objective": "pairwise-impression",
+                "objective": f"{objective}-impression",
                 "score_semantics": "raw logit; not probability",
-                "training": pairwise_model.training.to_dict(),
+                "training": impression_model.training.to_dict(),
                 "source_sha256": {
                     "articles": article_sha,
                     "training_impressions": training_sha,
@@ -905,7 +920,7 @@ def _run(argv: Sequence[str] | None = None) -> int:
             raise ValueError("held-out evaluation has no mixed-label impressions")
         # Exercise the exact on-disk MIND score parser before publishing either
         # output. A failed metric computation leaves no partial score artifact.
-        with tempfile.TemporaryDirectory(prefix="mosaicfeed-pairwise-") as staging:
+        with tempfile.TemporaryDirectory(prefix=f"mosaicfeed-{objective}-") as staging:
             staged_scores = Path(staging) / "scores.json"
             write_json(staged_scores, rows)
             reloaded = load_mind_scores(staged_scores)
@@ -919,9 +934,9 @@ def _run(argv: Sequence[str] | None = None) -> int:
             cutoffs=(5, 10) if args.cutoffs is None else tuple(args.cutoffs),
         )
         payload = {
-            "objective": "pairwise-impression",
+            "objective": f"{objective}-impression",
             "score_semantics": "raw logit; not probability",
-            "training": pairwise_model.training.to_dict(),
+            "training": impression_model.training.to_dict(),
             "source_sha256": {
                 "articles": article_sha,
                 "training_impressions": training_sha,

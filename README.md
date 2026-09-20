@@ -33,6 +33,7 @@ A useful feed is a slate, not a sorted column. A pure relevance ranking can repe
 - Paired policy benchmarks against popularity, recency, and unconstrained-relevance baselines with deterministic bootstrap confidence intervals.
 - A fitted pointwise logistic click/like ranker whose training features are built only from each event's prior history, with strict portable model state.
 - An opt-in impression-aware pairwise ranker for clicked versus displayed-unclicked MIND candidates, with raw-logit scores and a disjoint post-cutoff evaluation workflow.
+- An opt-in impression-aware listwise softmax ranker over each complete displayed MIND candidate set, with a distinct raw-logit model format and held-out workflow.
 - A bounded, deterministic HTTP inference API over a frozen model/catalog/history snapshot, with loopback-safe defaults and optional bearer authentication.
 - A versioned append-only interaction stream with idempotent ingestion, per-user watermarks, incremental profile updates, deterministic late-event rebuilds, and checksummed checkpoint/replay.
 - Strict JSON/JSONL validation, CLI workflows, synthetic-data generation, and portable HTML reports.
@@ -411,6 +412,9 @@ For a distinct within-impression objective, see the
 [pairwise impression contract](docs/pairwise-impressions.md). It keeps every
 displayed candidate for MIND score round trips, requires an explicit training
 partition and cutoff, and reports raw logits rather than click probabilities.
+The separate [listwise impression contract](docs/listwise-impressions.md)
+optimizes one softmax distribution over each logged candidate slate and keeps
+the same point-in-time and disjoint held-out boundaries.
 
 ### Local HTTP inference
 

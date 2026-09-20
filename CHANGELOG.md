@@ -6,6 +6,28 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.8.0] - 2026-09-19
+
+### Added
+
+- Added an opt-in `ListwiseImpressionRanker` with one stable softmax
+  cross-entropy update per mixed-label displayed impression. Multiple clicked
+  candidates share a uniform target; noncomparable impressions are reported
+  explicitly. Existing pointwise and pairwise models retain their formats.
+- Added bounded listwise train/rank/evaluate CLI workflows, a distinct
+  checksummed model state, immutable training/catalog fingerprints, a
+  candidate-lossless MIND score round trip, and the
+  [listwise impression contract](docs/listwise-impressions.md).
+- Added hand-computed gradient and same-timestamp SGD oracles, disjoint
+  post-cutoff/atomic-output/resource tests, UTF-8 state-invariance regressions,
+  and listwise wheel/sdist verification.
+
+### Limitations
+
+- Listwise scores are raw within-impression logits, not calibrated click
+  probabilities. This release does not include a neural news encoder,
+  official MIND-small benchmark result, or licensed MIND dataset rows.
+
 ## [0.7.0] - 2026-09-19
 
 ### Added

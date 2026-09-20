@@ -22,6 +22,7 @@ from mosaicfeed.event_stream import (
     load_interaction_events,
 )
 from mosaicfeed.learning import ClickPrediction, PointwiseLogisticRanker
+from mosaicfeed.listwise import ListwiseImpressionRanker, ListwiseTrainingSummary
 from mosaicfeed.mind import MindEvaluationReport, evaluate_mind_impressions
 from mosaicfeed.models import Article, Event, EventKind, Feed, Recommendation, UserProfile
 from mosaicfeed.pairwise import PairwiseImpressionRanker, PairwiseTrainingSummary
@@ -52,6 +53,8 @@ __all__ = [
     "IngestReport",
     "InteractionEvent",
     "LateEventError",
+    "ListwiseImpressionRanker",
+    "ListwiseTrainingSummary",
     "LogIntegrityError",
     "MindCandidate",
     "MindDataset",
@@ -79,4 +82,4 @@ __all__ = [
     "run_policy_benchmark",
 ]
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
