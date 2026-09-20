@@ -1,0 +1,5 @@
+[
+  {"impression_id": "train-1", "user_id": "reader", "occurred_at": "2026-01-02T00:00:00Z", "candidates": [{"article_id": "a", "clicked": true}, {"article_id": "b", "clicked": false}]},
+  {"impression_id": "train-2", "user_id": "reader", "occurred_at": "2026-01-03T00:00:00Z", "candidates": [{"article_id": "c", "clicked": true}, {"article_id": "d", "clicked": false}]},
+  {"impression_id": "train-3", "user_id": "reader", "occurred_at": "2026-01-04T00:00:00Z", "candidates": [{"article_id": "a", "clicked": true}, {"article_id": "d", "clicked": false}]}
+]

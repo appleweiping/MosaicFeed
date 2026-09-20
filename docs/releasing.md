@@ -1,6 +1,6 @@
 # Release process
 
-A push of a semantic-version tag such as `v0.11.0` invokes the release
+A push of a semantic-version tag such as `v0.14.0` invokes the release
 workflow. The workflow refuses a tag that differs from `project.version`,
 installs the committed `uv.lock`, runs the static and coverage-gated suite,
 checks that covered branches alone (not the combined line/branch score) reach

@@ -52,6 +52,7 @@ from mosaicfeed.mind import (
     load_mind_impressions,
     load_mind_scores,
 )
+from mosaicfeed.neural_news import NeuralNewsConfig, run_neural_news_experiment
 from mosaicfeed.pairwise import PairwiseImpressionRanker
 from mosaicfeed.pipeline import build_feed
 from mosaicfeed.policy_frontier import (
@@ -346,6 +347,21 @@ def _parser() -> argparse.ArgumentParser:
     training_experiment.add_argument("--validation", required=True)
     training_experiment.add_argument("--plan", required=True)
     training_experiment.add_argument("--registry", required=True)
+
+    neural_news = subcommands.add_parser(
+        "run-neural-news", help="fit a bounded title-embedding news baseline on train/dev splits"
+    )
+    neural_news.add_argument("--articles", required=True)
+    neural_news.add_argument("--train", required=True)
+    neural_news.add_argument("--validation", required=True)
+    neural_news.add_argument("--cutoff", required=True)
+    neural_news.add_argument("--output", required=True)
+    neural_news.add_argument("--dimension", type=int, default=8)
+    neural_news.add_argument("--epochs", type=int, default=4)
+    neural_news.add_argument("--learning-rate", type=float, default=0.1)
+    neural_news.add_argument("--seed", type=int, default=17)
+    neural_news.add_argument("--max-vocabulary", type=int, default=2_048)
+    neural_news.add_argument("--max-history", type=int, default=32)
 
     cohort_audit = subcommands.add_parser(
         "audit-cohorts", help="compare declared user cohorts on temporal holdouts"
@@ -686,6 +702,33 @@ def _run(argv: Sequence[str] | None = None) -> int:
                 f"experiment {record['experiment_id']} is already registered"
             ) from error
         print(f"registered training experiment {record['experiment_id']} to {destination}")
+        return 0
+    if args.command == "run-neural-news":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "train": args.train,
+                "validation": args.validation,
+                "output": args.output,
+            }
+        )
+        config = NeuralNewsConfig(
+            dimension=args.dimension,
+            epochs=args.epochs,
+            learning_rate=args.learning_rate,
+            seed=args.seed,
+            max_vocabulary=args.max_vocabulary,
+            max_history=args.max_history,
+        )
+        neural_record = run_neural_news_experiment(
+            read_experiment_source(args.articles, maximum=MAX_TRAINING_SOURCE_BYTES),
+            read_experiment_source(args.train, maximum=MAX_TRAINING_SOURCE_BYTES),
+            read_experiment_source(args.validation, maximum=MAX_TRAINING_SOURCE_BYTES),
+            cutoff=parse_datetime(args.cutoff, "cutoff"),
+            config=config,
+        )
+        write_json(args.output, neural_record)
+        print(f"wrote neural-news experiment to {args.output}")
         return 0
     if args.command == "audit-cohorts":
         _require_distinct_paths(

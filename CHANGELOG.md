@@ -6,6 +6,16 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.14.0] - 2026-09-20
+
+### Added
+
+- A bounded, zero-runtime-dependency neural-news title embedding baseline with
+  trainable `tanh` token means, earlier-training-click user aggregation,
+  complete candidate BCE updates, strict post-cutoff dev scoring, state and
+  source fingerprints, finite-difference gradient oracle, CLI/CI smoke, and
+  hand-written synthetic examples. This is not NRMS or an official MIND result.
+
 ## [0.13.0] - 2026-09-20
 
 ### Added

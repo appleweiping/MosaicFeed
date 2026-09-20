@@ -34,6 +34,7 @@ A useful feed is a slate, not a sorted column. A pure relevance ranking can repe
 - A fitted pointwise logistic click/like ranker whose training features are built only from each event's prior history, with strict portable model state.
 - An opt-in impression-aware pairwise ranker for clicked versus displayed-unclicked MIND candidates, with raw-logit scores and a disjoint post-cutoff evaluation workflow.
 - An opt-in impression-aware listwise softmax ranker over each complete displayed MIND candidate set, with a distinct raw-logit model format and held-out workflow.
+- An opt-in, bounded neural-news baseline with trainable title-token embeddings, earlier-click user aggregation, and candidate logits over temporally disjoint train/dev impressions.
 - A bounded, deterministic HTTP inference API over a frozen model/catalog/history snapshot, with loopback-safe defaults and optional bearer authentication.
 - A versioned append-only interaction stream with idempotent ingestion, per-user watermarks, incremental profile updates, deterministic late-event rebuilds, and checksummed checkpoint/replay.
 - Strict JSON/JSONL validation, CLI workflows, synthetic-data generation, and portable HTML reports.
@@ -322,6 +323,25 @@ mosaicfeed run-training-experiment \
 See the [training experiment contract](docs/training_experiments.md) for
 selection semantics, bounds, provenance, checkpoint loading, and limitations.
 It is not an official MIND benchmark or an untouched-test estimate.
+
+## Local neural-news baseline
+
+For caller-owned MIND-shaped train/dev splits, the standard-library-only
+`run-neural-news` command fits trainable title embeddings and a user-history
+scorer, then writes complete validation scores, metrics, a strict model state,
+and exact source hashes. The example is hand-written synthetic data with
+repeated-user click history:
+
+```bash
+mosaicfeed run-neural-news \
+  --articles examples/training_experiment_articles.json \
+  --train examples/neural_news_train.json \
+  --validation examples/neural_news_validation.json \
+  --cutoff 2026-01-04T00:00:00Z --output neural-news-local.json
+```
+
+This local CPU baseline is not NRMS or an official MIND reproduction. See the
+[model, temporal, and resource contract](docs/neural-news.md).
 
 ## Declared-cohort audit
 

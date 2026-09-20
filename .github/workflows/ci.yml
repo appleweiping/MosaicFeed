@@ -62,6 +62,26 @@ jobs:
           --plan examples/training_experiment_plan.json
           --registry training-experiment-smoke
       - if: matrix.python-version == '3.11'
+        name: Run bounded neural-news train/dev smoke test
+        shell: bash
+        run: |
+          uv run --locked mosaicfeed run-neural-news \
+            --articles examples/training_experiment_articles.json \
+            --train examples/neural_news_train.json \
+            --validation examples/neural_news_validation.json \
+            --cutoff 2026-01-04T00:00:00Z --dimension 4 --epochs 2 \
+            --output neural-news-smoke.json
+          uv run --locked python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path("neural-news-smoke.json").read_text(encoding="utf-8"))
+          assert result["format"] == "mosaicfeed.neural-news-experiment"
+          assert result["model"]["format"] == "mosaicfeed.neural-news"
+          assert result["metrics"]["impressions"] == 2
+          assert len(result["scores"]) == 4
+          assert result["model"]["training_history_lengths"]["train-3"] == 2
+          PY
+      - if: matrix.python-version == '3.11'
         run: >-
           uv run --locked mosaicfeed audit-cohorts --articles examples/articles.json
           --events examples/events.json --cohorts examples/cohorts.json
@@ -149,8 +169,10 @@ jobs:
           .ci-wheel-check/bin/mosaicfeed stream-replay --help
           .ci-wheel-check/bin/mosaicfeed train-pairwise-model --help
           .ci-wheel-check/bin/mosaicfeed train-listwise-model --help
+          .ci-wheel-check/bin/mosaicfeed run-neural-news --help
           .ci-wheel-check/bin/python -c "from mosaicfeed import PairwiseImpressionRanker; assert PairwiseImpressionRanker(epochs=1).is_fitted is False"
           .ci-wheel-check/bin/python -c "from mosaicfeed import ListwiseImpressionRanker; assert ListwiseImpressionRanker(epochs=1).is_fitted is False"
+          .ci-wheel-check/bin/python -c "from mosaicfeed import NeuralNewsConfig; assert NeuralNewsConfig().dimension == 8"
           .ci-wheel-check/bin/mosaicfeed train-click-model \
             --articles examples/articles.json --events examples/text-events.json \
             --as-of 2026-08-30T12:00:00Z --epochs 3 --text-features \

@@ -50,6 +50,11 @@ It freezes a caller-declared training-news snapshot at the earliest eligible
 event (or uses the first event's article as a conservative fallback), excludes
 held-out news from IDF, and adds text evidence only after prior user events.
 
+The separate [neural-news baseline](neural-news.md) fits title-token embeddings
+on train-only MIND-shaped impressions. A strict same-timestamp barrier and a
+frozen training-click history prevent validation-label leakage; its raw logits
+are not the existing pointwise model's probabilities or a full NRMS pipeline.
+
 ## Incremental-event boundary
 
 The versioned interaction log is authoritative and append-only. One canonical
