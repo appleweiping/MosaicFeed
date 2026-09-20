@@ -285,6 +285,24 @@ users carry a propensity: a bootstrap over one cluster resamples the same cluste
 reports zero width, which reads as certainty rather than as having one user. None of this makes
 the result causal, and none of it corrects a propensity model that was wrong.
 
+## Declared-cohort audit
+
+Compare utility, slate diversity, and pre-holdout topic calibration across
+caller-declared cohorts without inferring demographic labels:
+
+```bash
+mosaicfeed audit-cohorts \
+  --articles examples/articles.json --events examples/events.json \
+  --cohorts examples/cohorts.json --as-of 2026-08-30T12:00:00Z \
+  --k 3 --minimum-group-size 1 --bootstrap-samples 100 \
+  --output cohort-audit.json
+```
+
+The size-one example is a synthetic smoke test, not a responsible real-world
+fairness threshold. [The cohort-audit guide](docs/cohort-audit.md) details the
+strict mapping, missing-evidence semantics, confidence intervals, and limits
+on causal interpretation.
+
 ## MIND dataset adapter
 
 MosaicFeed can convert locally obtained MIND `news.tsv` and `behaviors.tsv` files without downloading

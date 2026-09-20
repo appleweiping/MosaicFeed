@@ -6,6 +6,7 @@ from mosaicfeed.benchmark import (
     bootstrap_mean,
     run_policy_benchmark,
 )
+from mosaicfeed.cohorts import CohortAudit, CohortSummary, audit_cohorts, load_declared_cohorts
 from mosaicfeed.config import FeedConfig
 from mosaicfeed.datasets import MindCandidate, MindDataset, MindImpression, fixed_offset, load_mind
 from mosaicfeed.event_stream import (
@@ -42,6 +43,8 @@ __all__ = [
     "CheckpointReport",
     "ClickPrediction",
     "ClickRankService",
+    "CohortAudit",
+    "CohortSummary",
     "ConfidenceInterval",
     "Event",
     "EventConflictError",
@@ -70,16 +73,18 @@ __all__ = [
     "ServingLimits",
     "TextFeatureConfig",
     "UserProfile",
+    "audit_cohorts",
     "bootstrap_mean",
     "build_feed",
     "create_rank_server",
     "evaluate_mind_impressions",
     "fixed_offset",
     "load_click_rank_service",
+    "load_declared_cohorts",
     "load_event_store",
     "load_interaction_events",
     "load_mind",
     "run_policy_benchmark",
 ]
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"

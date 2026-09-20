@@ -50,6 +50,12 @@ jobs:
           --k 3 --bootstrap-samples 20 --output benchmark-smoke.json
       - if: matrix.python-version == '3.11'
         run: >-
+          uv run --locked mosaicfeed audit-cohorts --articles examples/articles.json
+          --events examples/events.json --cohorts examples/cohorts.json
+          --as-of 2026-08-30T12:00:00Z --k 3 --minimum-group-size 1
+          --bootstrap-samples 20 --output cohort-audit-smoke.json
+      - if: matrix.python-version == '3.11'
+        run: >-
           uv run --locked mosaicfeed evaluate-mind --impressions examples/mind_impressions.json
           --scores examples/mind_scores.json --cutoff 1 --cutoff 2
           --output mind-evaluation-smoke.json
