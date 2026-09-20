@@ -16,6 +16,7 @@ from typing import cast
 
 from mosaicfeed import __version__
 from mosaicfeed.benchmark import render_benchmark_html, run_policy_benchmark
+from mosaicfeed.cohorts import audit_cohorts, load_audit_sources, load_declared_cohorts
 from mosaicfeed.config import FeedConfig
 from mosaicfeed.datasets import MindImpression, fixed_offset, load_mind
 from mosaicfeed.event_stream import (
@@ -305,6 +306,21 @@ def _parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--output")
     benchmark.add_argument("--html")
 
+    cohort_audit = subcommands.add_parser(
+        "audit-cohorts", help="compare declared user cohorts on temporal holdouts"
+    )
+    cohort_audit.add_argument("--articles", required=True)
+    cohort_audit.add_argument("--events", required=True)
+    cohort_audit.add_argument("--cohorts", required=True)
+    cohort_audit.add_argument("--as-of")
+    cohort_audit.add_argument("--config")
+    cohort_audit.add_argument("--k", type=int)
+    cohort_audit.add_argument("--minimum-group-size", type=int, default=5)
+    cohort_audit.add_argument("--bootstrap-samples", type=int, default=1_000)
+    cohort_audit.add_argument("--confidence", type=float, default=0.95)
+    cohort_audit.add_argument("--seed", type=int, default=17)
+    cohort_audit.add_argument("--output")
+
     simulate = subcommands.add_parser("simulate", help="create a reproducible synthetic dataset")
     simulate.add_argument("--directory", required=True)
     simulate.add_argument("--seed", type=int, default=17)
@@ -573,6 +589,34 @@ def _run(argv: Sequence[str] | None = None) -> int:
         atomic_write_texts(outputs)
         if not args.output:
             print(json.dumps(benchmark_payload, indent=2, sort_keys=True))
+        return 0
+    if args.command == "audit-cohorts":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "cohorts": args.cohorts,
+                "config": args.config,
+                "events": args.events,
+                "output": args.output,
+            }
+        )
+        audit_articles, audit_events = load_audit_sources(args.articles, args.events)
+        cohort_report = audit_cohorts(
+            audit_articles,
+            audit_events,
+            load_declared_cohorts(args.cohorts),
+            as_of=_clock(args.as_of),
+            config=_config(args.config, maximum_bytes=64 * 1024),
+            k=args.k,
+            minimum_group_size=args.minimum_group_size,
+            bootstrap_samples=args.bootstrap_samples,
+            confidence=args.confidence,
+            seed=args.seed,
+        )
+        if args.output:
+            write_json(args.output, cohort_report.to_dict())
+        else:
+            print(json.dumps(cohort_report.to_dict(), indent=2, sort_keys=True))
         return 0
     if args.command == "simulate":
         directory = Path(args.directory)

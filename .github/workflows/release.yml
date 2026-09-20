@@ -65,6 +65,7 @@ jobs:
           .release-wheel-check/bin/mosaicfeed stream-replay --help
           .release-wheel-check/bin/mosaicfeed train-pairwise-model --help
           .release-wheel-check/bin/mosaicfeed train-listwise-model --help
+          .release-wheel-check/bin/mosaicfeed audit-cohorts --help
           .release-wheel-check/bin/python -c "from mosaicfeed import ListwiseImpressionRanker; assert not ListwiseImpressionRanker(epochs=1).is_fitted"
       - name: Verify the source distribution in a clean environment
         shell: bash
@@ -77,6 +78,7 @@ jobs:
           .release-sdist-check/bin/mosaicfeed stream-replay --help
           .release-sdist-check/bin/mosaicfeed train-pairwise-model --help
           .release-sdist-check/bin/mosaicfeed evaluate-listwise-model --help
+          .release-sdist-check/bin/mosaicfeed audit-cohorts --help
           .release-sdist-check/bin/python -c "from mosaicfeed import ListwiseImpressionRanker; assert not ListwiseImpressionRanker(epochs=1).is_fitted"
       - name: Generate runtime dependency SBOM
         shell: bash

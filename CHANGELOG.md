@@ -6,6 +6,21 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.9.0] - 2026-09-19
+
+### Added
+
+- Added a strict, opt-in declared-cohort audit for temporal leave-last-out
+  evaluation. It reports per-cohort active, evaluated, skipped, and
+  calibration-eligible counts; seeded user-bootstrap intervals for utility,
+  slate diversity, and pre-holdout topic calibration; and explicit
+  maximum-minus-minimum gaps only when at least two groups have evidence.
+- Added a bounded UTF-8 cohort mapping adapter, synthetic CLI example,
+  hand-computed group arithmetic and same-time/future-event leakage tests,
+  fail-closed group-size and work ceilings, CI smoke, and clean-package CLI
+  checks. This observational diagnostic does not infer protected attributes
+  or establish causal fairness or official MIND benchmark parity.
+
 ## [0.8.0] - 2026-09-19
 
 ### Added
