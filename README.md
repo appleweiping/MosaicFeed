@@ -361,6 +361,12 @@ intentional clarification for tied scores, hand-calculated golden cases, and a f
 independent cross-check. Obtain MIND from its
 official distributor and follow its research license; no MIND data is included in this repository.
 
+For a hash-checked train/dev experiment on user-supplied MIND-small ZIPs or
+extracted directories, see the [offline MIND-small workflow](docs/mind-small-workflow.md).
+It trains a bounded pairwise baseline and writes a model, candidate-complete
+validation scores, and a provenance report. Its default earliest-prefix sample
+is not a full-dataset or official leaderboard result.
+
 ## Python API
 
 ```python

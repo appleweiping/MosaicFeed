@@ -6,6 +6,16 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.11.0] - 2026-09-19
+
+### Added
+
+- Offline, hash-checked MIND-small train/dev workflow for user-supplied ZIPs or
+  extracted directories. It validates the four-file layout and temporal split,
+  trains a bounded pairwise baseline, scores the held-out candidate sets, and
+  publishes a deterministic model/scores/report bundle without dataset files.
+  The sampled baseline is not a full official benchmark result.
+
 ## [0.10.0] - 2026-09-19
 
 ### Added
