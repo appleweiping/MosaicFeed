@@ -238,6 +238,77 @@ def test_single_step_gradient_matches_finite_difference_oracle() -> None:
     assert loss(trained) < loss(base)
 
 
+def test_prior_click_embedding_gradient_matches_finite_difference_oracle() -> None:
+    base = NeuralNewsRanker.fit(
+        _articles(),
+        _train()[:1],
+        cutoff=CUTOFF,
+        config=NeuralNewsConfig(dimension=2, epochs=1, learning_rate=0.01),
+    ).to_state()
+    base["vocabulary"] = ["<unk>", "grid", "power", "solar", "match", "sports"]
+    base["embeddings"] = [
+        [0.0, 0.0],
+        [0.2, 0.1],
+        [0.1, -0.1],
+        [0.3, -0.2],
+        [-0.2, 0.1],
+        [0.1, 0.2],
+    ]
+    base["user_bias"] = [0.3, -0.2]
+    base["histories"] = {"u": ["c"]}
+    model = NeuralNewsRanker.from_state(base)
+    row = _train()[0]  # The prior-click article c is not displayed in this slate.
+    token_ids = model._token_ids({article.id: article for article in _articles()}, model.vocabulary)
+
+    def loss(state: dict[str, object]) -> float:
+        embeddings = state["embeddings"]
+        prior_ids = token_ids["c"]
+        prior = [
+            math.tanh(sum(embeddings[token][axis] for token in prior_ids) / len(prior_ids))
+            for axis in range(2)
+        ]
+        user = [state["user_bias"][axis] + prior[axis] for axis in range(2)]
+        total = 0.0
+        for candidate in row.candidates:
+            ids = token_ids[candidate.article_id]
+            encoded = [
+                math.tanh(sum(embeddings[token][axis] for token in ids) / len(ids))
+                for axis in range(2)
+            ]
+            logit = sum(user[axis] * encoded[axis] for axis in range(2))
+            total += math.log1p(math.exp(logit)) - float(candidate.clicked) * logit
+        return total
+
+    epsilon = 1e-6
+    derivatives: dict[tuple[str, int, int], float] = {}
+    for token in range(1, len(base["embeddings"])):
+        for axis in range(2):
+            plus = copy.deepcopy(base)
+            minus = copy.deepcopy(base)
+            plus["embeddings"][token][axis] += epsilon
+            minus["embeddings"][token][axis] -= epsilon
+            derivatives[("embedding", token, axis)] = (loss(plus) - loss(minus)) / (2 * epsilon)
+    for axis in range(2):
+        plus = copy.deepcopy(base)
+        minus = copy.deepcopy(base)
+        plus["user_bias"][axis] += epsilon
+        minus["user_bias"][axis] -= epsilon
+        derivatives[("bias", 0, axis)] = (loss(plus) - loss(minus)) / (2 * epsilon)
+
+    assert abs(derivatives[("embedding", 2, 0)]) > 1e-8  # History-only token.
+    model._train_row(row, ("c",), token_ids)
+    trained = model.to_state()
+    for (kind, token, axis), derivative in derivatives.items():
+        before = base["embeddings"][token][axis] if kind == "embedding" else base["user_bias"][axis]
+        after = (
+            trained["embeddings"][token][axis]
+            if kind == "embedding"
+            else trained["user_bias"][axis]
+        )
+        assert (before - after) / model.config.learning_rate == pytest.approx(derivative, abs=1e-8)
+    assert loss(trained) < loss(base)
+
+
 def test_rejects_temporal_overlap_future_publication_and_unknown_candidate() -> None:
     with pytest.raises(ValueError, match="after cutoff"):
         NeuralNewsRanker.fit(_articles(), _validation(), cutoff=CUTOFF)
@@ -253,6 +324,22 @@ def test_rejects_temporal_overlap_future_publication_and_unknown_candidate() -> 
     future = Article("z", "Future title", "", ("future",), "s", START + timedelta(days=7))
     with pytest.raises(ValueError, match="predates article publication"):
         model.score_impressions((*_articles(), future), (_row("v1", "u", 6, "z", "a", True),))
+
+
+@pytest.mark.parametrize("invalid", [["unhashable"], "x" * 257, 42, ""])
+def test_fit_rejects_invalid_held_out_impression_ids(invalid: object) -> None:
+    with pytest.raises(ValueError, match="held-out impression ids"):
+        NeuralNewsRanker.fit(
+            _articles(), _train(), cutoff=CUTOFF, held_out_impression_ids=[invalid]
+        )
+
+
+@pytest.mark.parametrize(
+    "held_out", [["repeated", "repeated"], [str(index) for index in range(101)]]
+)
+def test_fit_rejects_duplicate_or_excess_held_out_impression_ids(held_out: list[str]) -> None:
+    with pytest.raises(ValueError, match="held-out impression ids"):
+        NeuralNewsRanker.fit(_articles(), _train(), cutoff=CUTOFF, held_out_impression_ids=held_out)
 
 
 @pytest.mark.parametrize(

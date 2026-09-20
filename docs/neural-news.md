@@ -23,13 +23,17 @@ impressions**. The candidate's raw logit is its title vector's dot product with
 that user representation. Binary cross-entropy on the complete displayed
 training slate backpropagates into both title embeddings and the bias. Each
 impression updates once; the other candidates in that same impression cannot
-enter its history. A finite-difference test independently checks the gradient.
+enter its history. Independent finite-difference tests check gradients both
+without prior clicks and through a history-only title token.
 
 The vocabulary is built only from distinct **training candidate** titles. A
 validation-only word is OOV, never used to fit vocabulary or parameters. Training
 impressions must be at or before the declared aware cutoff; all validation
 impressions must be after it, with distinct IDs. The same-timestamp training
 group is scored against the history snapshot that existed before that timestamp.
+The standalone fit API also bounds and validates held-out impression IDs before
+checking overlap, including type and length, so malformed IDs fail as validation
+errors rather than leaking a raw hash/type error.
 After training, validation scoring uses only frozen training clicks for each user:
 it never appends validation clicks, even across later validation impressions.
 Validation labels are consumed solely by the existing AUC/MRR/nDCG evaluator.

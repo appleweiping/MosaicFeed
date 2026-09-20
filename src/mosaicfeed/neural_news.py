@@ -267,8 +267,15 @@ class NeuralNewsRanker:
             raise ValueError("training impression occurs after cutoff")
         train_ids = tuple(sorted(row.impression_id for row in rows))
         held_out = tuple(islice(held_out_impression_ids, MAX_VALIDATION_ROWS + 1))
-        if len(held_out) > MAX_VALIDATION_ROWS or len(held_out) != len(set(held_out)):
-            raise ValueError("held-out impression ids exceed limit or repeat")
+        if (
+            len(held_out) > MAX_VALIDATION_ROWS
+            or any(
+                type(identity) is not str or not identity or len(identity) > 256
+                for identity in held_out
+            )
+            or len(held_out) != len(set(held_out))
+        ):
+            raise ValueError("held-out impression ids exceed limit, repeat, or are invalid")
         if set(train_ids) & set(held_out):
             raise ValueError("train and held-out impression ids overlap")
         contexts, histories = _contexts(rows, config.max_history)
