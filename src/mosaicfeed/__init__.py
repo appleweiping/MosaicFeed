@@ -22,6 +22,14 @@ from mosaicfeed.event_stream import (
     load_event_store,
     load_interaction_events,
 )
+from mosaicfeed.experiments import (
+    ABLATIONS,
+    AblationPlan,
+    ExperimentRun,
+    run_ablation_experiment,
+    verify_experiment_record,
+    write_experiment_record,
+)
 from mosaicfeed.learning import ClickPrediction, PointwiseLogisticRanker
 from mosaicfeed.listwise import ListwiseImpressionRanker, ListwiseTrainingSummary
 from mosaicfeed.mind import MindEvaluationReport, evaluate_mind_impressions
@@ -38,6 +46,8 @@ from mosaicfeed.server import (
 from mosaicfeed.text_features import NewsTextEncoder, TextFeatureConfig
 
 __all__ = [
+    "ABLATIONS",
+    "AblationPlan",
     "Article",
     "BenchmarkReport",
     "CheckpointReport",
@@ -51,6 +61,7 @@ __all__ = [
     "EventHistorySnapshot",
     "EventKind",
     "EventStreamLimits",
+    "ExperimentRun",
     "Feed",
     "FeedConfig",
     "IngestReport",
@@ -84,7 +95,10 @@ __all__ = [
     "load_event_store",
     "load_interaction_events",
     "load_mind",
+    "run_ablation_experiment",
     "run_policy_benchmark",
+    "verify_experiment_record",
+    "write_experiment_record",
 ]
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"

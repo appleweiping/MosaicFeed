@@ -26,6 +26,13 @@ from mosaicfeed.event_stream import (
     load_interaction_events,
     profile_to_dict,
 )
+from mosaicfeed.experiments import (
+    MAX_EXPERIMENT_PLAN_BYTES,
+    MAX_EXPERIMENT_SOURCE_BYTES,
+    read_experiment_source,
+    run_ablation_experiment,
+    write_experiment_record,
+)
 from mosaicfeed.io import (
     atomic_write_texts,
     feed_to_dict,
@@ -305,6 +312,14 @@ def _parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--seed", type=int, default=17)
     benchmark.add_argument("--output")
     benchmark.add_argument("--html")
+
+    experiment = subcommands.add_parser(
+        "run-ablation", help="register a bounded local leave-last-out ablation experiment"
+    )
+    experiment.add_argument("--articles", required=True)
+    experiment.add_argument("--events", required=True)
+    experiment.add_argument("--plan", required=True)
+    experiment.add_argument("--registry", required=True)
 
     cohort_audit = subcommands.add_parser(
         "audit-cohorts", help="compare declared user cohorts on temporal holdouts"
@@ -589,6 +604,28 @@ def _run(argv: Sequence[str] | None = None) -> int:
         atomic_write_texts(outputs)
         if not args.output:
             print(json.dumps(benchmark_payload, indent=2, sort_keys=True))
+        return 0
+    if args.command == "run-ablation":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "events": args.events,
+                "plan": args.plan,
+                "registry": args.registry,
+            }
+        )
+        run = run_ablation_experiment(
+            read_experiment_source(args.articles, maximum=MAX_EXPERIMENT_SOURCE_BYTES),
+            read_experiment_source(args.events, maximum=MAX_EXPERIMENT_SOURCE_BYTES),
+            read_experiment_source(args.plan, maximum=MAX_EXPERIMENT_PLAN_BYTES),
+            articles_name=args.articles,
+            events_name=args.events,
+        )
+        try:
+            destination = write_experiment_record(args.registry, run)
+        except FileExistsError as error:
+            raise ValueError(f"experiment {run.experiment_id} is already registered") from error
+        print(f"registered experiment {run.experiment_id} to {destination}")
         return 0
     if args.command == "audit-cohorts":
         _require_distinct_paths(

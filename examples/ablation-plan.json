@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-08-30T12:00:00Z",
+  "config": {
+    "size": 5,
+    "interest_weight": 0.45,
+    "freshness_weight": 0.2,
+    "quality_weight": 0.17,
+    "novelty_weight": 0.08,
+    "popularity_weight": 0.1,
+    "exploration_weight": 0.02,
+    "max_per_source": 2,
+    "mmr_lambda": 0.76
+  },
+  "k": 3,
+  "ablations": ["without_interest", "without_slate_diversity"],
+  "bootstrap_samples": 20,
+  "confidence": 0.95,
+  "seed": 17
+}

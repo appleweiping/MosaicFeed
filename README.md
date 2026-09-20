@@ -285,6 +285,23 @@ users carry a propensity: a bootstrap over one cluster resamples the same cluste
 reports zero width, which reads as certainty rather than as having one user. None of this makes
 the result causal, and none of it corrects a propensity model that was wrong.
 
+## Local ablation registry
+
+Run declared one-factor ablations on identical temporal holdouts, then store
+the metrics and exact input-byte provenance in a content-addressed record:
+
+```bash
+mosaicfeed run-ablation \
+  --articles examples/articles.json --events examples/events.json \
+  --plan examples/ablation-plan.json --registry scratch/ablation-registry
+```
+
+Records are never overwritten. Paired confidence intervals share the same
+resampled users across variants. This is an offline feed-config diagnostic,
+not checkpoint selection or a MIND-small result. See the
+[ablation registry contract](docs/ablation-registry.md) for plan names, bounds,
+provenance, and limitations.
+
 ## Declared-cohort audit
 
 Compare utility, slate diversity, and pre-holdout topic calibration across

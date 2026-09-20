@@ -6,6 +6,18 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.10.0] - 2026-09-19
+
+### Added
+
+- Bounded local ablation experiment runner with seven one-factor variants,
+  shared temporal holdouts, paired bootstrap comparisons, conservative work
+  budgets, and a strict versioned, content-addressed, no-overwrite registry.
+- Adversarial resource-bound and replay tests, package/CLI smoke, and docs
+  identifying feature-provenance and cross-version migration limits. Model
+  checkpoint selection, neural/MIND-small parity, and official scores remain
+  open.
+
 ## [0.9.0] - 2026-09-19
 
 ### Added
