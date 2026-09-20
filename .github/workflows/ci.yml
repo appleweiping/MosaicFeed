@@ -119,6 +119,29 @@ jobs:
           --scores examples/mind_scores.json --cutoff 1 --cutoff 2
           --output mind-evaluation-smoke.json
       - if: matrix.python-version == '3.11'
+        name: Run strict MIND text export/evaluation smoke test
+        shell: bash
+        run: |
+          uv run --locked mosaicfeed export-mind-predictions \
+            --impressions examples/mind_impressions.json \
+            --scores examples/mind_scores.json \
+            --truth examples/mind_truth.txt --output mind-prediction-smoke.txt
+          uv run --locked mosaicfeed evaluate-mind-submission \
+            --truth examples/mind_truth.txt --prediction mind-prediction-smoke.txt \
+            --output mind-submission-smoke.json
+          uv run --locked python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          truth = Path("examples/mind_truth.txt").read_bytes()
+          prediction = Path("mind-prediction-smoke.txt").read_bytes()
+          report = json.loads(Path("mind-submission-smoke.json").read_bytes())
+          assert prediction == b"synthetic-1 [2,1]\n"
+          assert (report["auc"], report["mrr"], report["ndcg_5"], report["ndcg_10"]) == (1.0,) * 4
+          assert report["truth_sha256"] == hashlib.sha256(truth).hexdigest()
+          assert report["prediction_sha256"] == hashlib.sha256(prediction).hexdigest()
+          PY
+      - if: matrix.python-version == '3.11'
         name: Run learned click-model smoke test
         shell: bash
         run: |
@@ -197,6 +220,8 @@ jobs:
           .ci-wheel-check/bin/mosaicfeed train-listwise-model --help
           .ci-wheel-check/bin/mosaicfeed run-neural-news --help
           .ci-wheel-check/bin/mosaicfeed run-neural-news-selection --help
+          .ci-wheel-check/bin/mosaicfeed export-mind-predictions --help
+          .ci-wheel-check/bin/mosaicfeed evaluate-mind-submission --help
           .ci-wheel-check/bin/python -c "from mosaicfeed import PairwiseImpressionRanker; assert PairwiseImpressionRanker(epochs=1).is_fitted is False"
           .ci-wheel-check/bin/python -c "from mosaicfeed import ListwiseImpressionRanker; assert ListwiseImpressionRanker(epochs=1).is_fitted is False"
           .ci-wheel-check/bin/python -c "from mosaicfeed import NeuralNewsConfig; assert NeuralNewsConfig().dimension == 8"

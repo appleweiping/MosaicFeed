@@ -432,8 +432,15 @@ The report contains macro impression AUC, MRR and nDCG at the declared cutoffs, 
 validation, deterministic tie handling, and fingerprints of the normalized labels and scores. The formulas
 follow the public MIND evaluator; [the complete contract](docs/mind-evaluation.md) documents the one
 intentional clarification for tied scores, hand-calculated golden cases, and a fixed-seed 200-case
-independent cross-check. Obtain MIND from its
-official distributor and follow its research license; no MIND data is included in this repository.
+ independent cross-check. Obtain MIND from its
+ official distributor and follow its research license; no MIND data is included in this repository.
+
+For challenge-shaped `ID [array]` truth/prediction text, the
+[`evaluate-mind-submission` and `export-mind-predictions` contract](docs/mind-submission.md)
+provides a bounded strict subset with exact candidate joins, deterministic rank
+export, masked-row handling, raw-source fingerprints and create-only CLI output.
+It is a local synthetic/caller-owned workflow, not a complete official challenge
+implementation or a leaderboard result.
 
 For a hash-checked train/dev experiment on user-supplied MIND-small ZIPs or
 extracted directories, see the [offline MIND-small workflow](docs/mind-small-workflow.md).

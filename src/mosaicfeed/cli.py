@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from mosaicfeed import __version__
+from mosaicfeed import __version__, mind_submission
 from mosaicfeed.benchmark import render_benchmark_html, run_policy_benchmark
 from mosaicfeed.cohorts import audit_cohorts, load_audit_sources, load_declared_cohorts
 from mosaicfeed.config import FeedConfig
@@ -441,6 +441,22 @@ def _parser() -> argparse.ArgumentParser:
     mind_evaluate.add_argument("--scores", required=True)
     mind_evaluate.add_argument("--cutoff", action="append", type=int, dest="cutoffs")
     mind_evaluate.add_argument("--output")
+
+    submission_evaluate = subcommands.add_parser(
+        "evaluate-mind-submission",
+        help="evaluate a strict, bounded MIND truth/prediction text subset",
+    )
+    submission_evaluate.add_argument("--truth", required=True)
+    submission_evaluate.add_argument("--prediction", required=True)
+    submission_evaluate.add_argument("--output", required=True)
+
+    submission_export = subcommands.add_parser(
+        "export-mind-predictions", help="export candidate-aligned MIND rank text from local scores"
+    )
+    submission_export.add_argument("--impressions", required=True)
+    submission_export.add_argument("--scores", required=True)
+    submission_export.add_argument("--truth", help="optional aligned mask/label validation")
+    submission_export.add_argument("--output", required=True)
 
     train_click = subcommands.add_parser(
         "train-click-model",
@@ -971,6 +987,65 @@ def _run(argv: Sequence[str] | None = None) -> int:
             write_json(args.output, payload)
         else:
             print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    if args.command == "evaluate-mind-submission":
+        _require_distinct_paths(
+            {"truth": args.truth, "prediction": args.prediction, "output": args.output}
+        )
+        truth_snapshot = mind_submission.read_snapshot(args.truth, mind_submission.MAX_TEXT_BYTES)
+        prediction_snapshot = mind_submission.read_snapshot(
+            args.prediction, mind_submission.MAX_TEXT_BYTES
+        )
+        submission_report = mind_submission.evaluate_mind_submission(
+            truth_snapshot, prediction_snapshot
+        )
+        if (
+            mind_submission.read_snapshot(args.truth, mind_submission.MAX_TEXT_BYTES)
+            != truth_snapshot
+            or mind_submission.read_snapshot(args.prediction, mind_submission.MAX_TEXT_BYTES)
+            != prediction_snapshot
+        ):
+            raise ValueError("MIND submission source changed before publication")
+        mind_submission.create_only(
+            args.output,
+            (json.dumps(submission_report.to_dict(), sort_keys=True) + "\n").encode("utf-8"),
+        )
+        return 0
+    if args.command == "export-mind-predictions":
+        _require_distinct_paths(
+            {
+                "impressions": args.impressions,
+                "scores": args.scores,
+                "truth": args.truth,
+                "output": args.output,
+            }
+        )
+        impression_snapshot = mind_submission.read_snapshot(
+            args.impressions, mind_submission.MAX_JSON_BYTES
+        )
+        score_snapshot = mind_submission.read_snapshot(args.scores, mind_submission.MAX_JSON_BYTES)
+        optional_truth_snapshot = (
+            None
+            if args.truth is None
+            else mind_submission.read_snapshot(args.truth, mind_submission.MAX_TEXT_BYTES)
+        )
+        prepared = mind_submission.prepare_mind_predictions(
+            impression_snapshot, score_snapshot, optional_truth_snapshot
+        )
+        if (
+            mind_submission.read_snapshot(args.impressions, mind_submission.MAX_JSON_BYTES)
+            != impression_snapshot
+            or mind_submission.read_snapshot(args.scores, mind_submission.MAX_JSON_BYTES)
+            != score_snapshot
+            or (
+                args.truth is not None
+                and mind_submission.read_snapshot(args.truth, mind_submission.MAX_TEXT_BYTES)
+                != optional_truth_snapshot
+            )
+        ):
+            raise ValueError("MIND submission source changed before publication")
+        mind_submission.create_only(args.output, prepared.prediction)
+        print(json.dumps(prepared.to_dict(), sort_keys=True))
         return 0
     if args.command == "train-click-model":
         _require_distinct_paths(

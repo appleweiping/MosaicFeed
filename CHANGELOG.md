@@ -6,6 +6,19 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.16.0] - 2026-09-20
+
+### Added
+
+- Strict bounded MIND-shaped truth/prediction text evaluation with independent
+  hand-calculated AUC/MRR/nDCG oracles, explicit masked-impression semantics,
+  exact row/rank alignment and source fingerprints.
+- Deterministic score-to-rank export over candidate-lossless caller-owned
+  impression records with exact score joins, optional truth masking, stable
+  source-order ties, create-only CLI outputs, synthetic smoke and adversarial
+  resource/alias tests. The protocol is intentionally narrower than the
+  official evaluator and no official dataset or benchmark claim is made.
+
 ## [0.15.0] - 2026-09-20
 
 ### Added

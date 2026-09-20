@@ -22,7 +22,7 @@ Verify a downloaded file with:
 
 ```bash
 sha256sum --check SHA256SUMS
-gh attestation verify mosaicfeed-0.11.0-py3-none-any.whl \
+gh attestation verify mosaicfeed-0.16.0-py3-none-any.whl \
   --repo appleweiping/MosaicFeed
 ```
 

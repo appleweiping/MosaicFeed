@@ -24,6 +24,7 @@ def _sdist_files(version: str) -> dict[str, bytes]:
         f"{root}/docs/event-stream.md": b"events\n",
         f"{root}/docs/http-inference.md": b"http\n",
         f"{root}/docs/listwise-impressions.md": b"listwise\n",
+        f"{root}/docs/mind-submission.md": b"mind submission\n",
         f"{root}/docs/neural-news.md": b"neural\n",
         f"{root}/docs/neural-news-selection.md": b"selection\n",
         f"{root}/docs/text-features.md": b"text\n",
@@ -32,18 +33,21 @@ def _sdist_files(version: str) -> dict[str, bytes]:
         f"{root}/examples/neural_news_train.json": b"[]\n",
         f"{root}/examples/neural_news_validation.json": b"[]\n",
         f"{root}/examples/neural_news_selection_plan.json": b"{}\n",
+        f"{root}/examples/mind_truth.txt": b"example [0,1]\n",
         f"{root}/scripts/verify_distributions.py": b"# verifier\n",
         f"{root}/scripts/verify_branch_coverage.py": b"# coverage gate\n",
         f"{root}/src/mosaicfeed/event_stream.py": b"# events\n",
         f"{root}/src/mosaicfeed/listwise.py": b"# listwise\n",
         f"{root}/src/mosaicfeed/neural_news.py": b"# neural\n",
         f"{root}/src/mosaicfeed/neural_news_selection.py": b"# selection\n",
+        f"{root}/src/mosaicfeed/mind_submission.py": b"# submission\n",
         f"{root}/src/mosaicfeed/server.py": b"# server\n",
         f"{root}/src/mosaicfeed/text_features.py": b"# text\n",
         f"{root}/tests/test_text_features.py": b"# text tests\n",
         f"{root}/tests/test_listwise.py": b"# listwise tests\n",
         f"{root}/tests/test_neural_news.py": b"# neural tests\n",
         f"{root}/tests/test_neural_news_selection.py": b"# selection tests\n",
+        f"{root}/tests/test_mind_submission.py": b"# submission tests\n",
     }
 
 
@@ -69,6 +73,7 @@ def _wheel_files(version: str) -> dict[str, bytes]:
         "mosaicfeed/listwise.py": b"# listwise\n",
         "mosaicfeed/neural_news.py": b"# neural\n",
         "mosaicfeed/neural_news_selection.py": b"# selection\n",
+        "mosaicfeed/mind_submission.py": b"# submission\n",
         "mosaicfeed/py.typed": b"",
         "mosaicfeed/server.py": b"# server\n",
         "mosaicfeed/text_features.py": b"# text\n",
@@ -168,6 +173,23 @@ def test_text_feature_slice_is_required_in_both_archives(tmp_path: Path) -> None
     wheel_files = _wheel_files(version)
     del wheel_files["mosaicfeed/text_features.py"]
     wheel = tmp_path / "without-text-code.whl"
+    _write_wheel(wheel, wheel_files)
+    with pytest.raises(ValueError, match="missing required files"):
+        verify_wheel(wheel, version=version)
+
+
+def test_submission_slice_is_required_in_both_archives(tmp_path: Path) -> None:
+    version = "0.5.0"
+    sdist_files = _sdist_files(version)
+    del sdist_files[f"mosaicfeed-{version}/docs/mind-submission.md"]
+    sdist = tmp_path / "without-submission-docs.tar.gz"
+    _write_sdist(sdist, sdist_files)
+    with pytest.raises(ValueError, match="missing required files"):
+        verify_sdist(sdist, version=version)
+
+    wheel_files = _wheel_files(version)
+    del wheel_files["mosaicfeed/mind_submission.py"]
+    wheel = tmp_path / "without-submission-code.whl"
     _write_wheel(wheel, wheel_files)
     with pytest.raises(ValueError, match="missing required files"):
         verify_wheel(wheel, version=version)
