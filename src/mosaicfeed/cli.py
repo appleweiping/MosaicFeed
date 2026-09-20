@@ -54,6 +54,12 @@ from mosaicfeed.mind import (
 )
 from mosaicfeed.pairwise import PairwiseImpressionRanker
 from mosaicfeed.pipeline import build_feed
+from mosaicfeed.policy_frontier import (
+    MAX_PLAN_BYTES,
+    PolicyFrontierPlan,
+    compare_cohort_policies,
+    write_frontier_report,
+)
 from mosaicfeed.report import render_feed_html
 from mosaicfeed.server import (
     DEFAULT_HOST,
@@ -335,6 +341,16 @@ def _parser() -> argparse.ArgumentParser:
     cohort_audit.add_argument("--confidence", type=float, default=0.95)
     cohort_audit.add_argument("--seed", type=int, default=17)
     cohort_audit.add_argument("--output")
+
+    frontier = subcommands.add_parser(
+        "compare-cohort-policies",
+        help="compare declared ranking policies on identical temporal cohort holdouts",
+    )
+    frontier.add_argument("--articles", required=True)
+    frontier.add_argument("--events", required=True)
+    frontier.add_argument("--cohorts", required=True)
+    frontier.add_argument("--plan", required=True)
+    frontier.add_argument("--output", required=True)
 
     simulate = subcommands.add_parser("simulate", help="create a reproducible synthetic dataset")
     simulate.add_argument("--directory", required=True)
@@ -654,6 +670,60 @@ def _run(argv: Sequence[str] | None = None) -> int:
             write_json(args.output, cohort_report.to_dict())
         else:
             print(json.dumps(cohort_report.to_dict(), indent=2, sort_keys=True))
+        return 0
+    if args.command == "compare-cohort-policies":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "events": args.events,
+                "cohorts": args.cohorts,
+                "plan": args.plan,
+                "output": args.output,
+            }
+        )
+
+        def snapshot(path: str, maximum: int) -> bytes:
+            with Path(path).open("rb") as source:
+                data = source.read(maximum + 1)
+            if len(data) > maximum:
+                raise ValueError("frontier source exceeds the input size limit")
+            return data
+
+        from mosaicfeed.cohorts import MAX_AUDIT_SOURCE_BYTES, MAX_COHORT_INPUT_BYTES
+        from mosaicfeed.io import load_articles_bytes, load_events_bytes
+
+        sources = {
+            "articles": snapshot(args.articles, MAX_AUDIT_SOURCE_BYTES),
+            "events": snapshot(args.events, MAX_AUDIT_SOURCE_BYTES),
+            "cohorts": snapshot(args.cohorts, MAX_COHORT_INPUT_BYTES),
+            "plan": snapshot(args.plan, MAX_PLAN_BYTES),
+        }
+        try:
+            cohort_payload = load_json_text(sources["cohorts"].decode("utf-8"))
+        except UnicodeDecodeError as error:
+            raise ValueError("cohorts must be strict UTF-8 JSON") from error
+        if not isinstance(cohort_payload, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in cohort_payload.items()
+        ):
+            raise ValueError("cohorts must be a JSON object of string labels")
+        frontier_report = compare_cohort_policies(
+            load_articles_bytes(sources["articles"], source_name=args.articles),
+            load_events_bytes(sources["events"], source_name=args.events),
+            cohort_payload,
+            PolicyFrontierPlan.from_bytes(sources["plan"]),
+            source_sha256={key: hashlib.sha256(data).hexdigest() for key, data in sources.items()},
+        )
+        write_frontier_report(args.output, frontier_report)
+        print(
+            json.dumps(
+                {
+                    "output": str(args.output),
+                    "pareto_frontier": list(frontier_report.pareto_frontier),
+                },
+                sort_keys=True,
+            )
+        )
         return 0
     if args.command == "simulate":
         directory = Path(args.directory)

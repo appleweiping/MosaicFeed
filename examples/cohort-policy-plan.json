@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-08-30T12:00:00Z",
+  "k": 3,
+  "minimum_group_size": 1,
+  "bootstrap_samples": 100,
+  "confidence": 0.95,
+  "seed": 17,
+  "hard_constraints": {},
+  "policies": [
+    {"name": "mmr", "config": {"size": 3, "rerank_strategy": "mmr"}},
+    {"name": "calibrated", "config": {"size": 3, "rerank_strategy": "calibrated", "calibration_weight": 0.5}}
+  ]
+}

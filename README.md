@@ -320,6 +320,22 @@ fairness threshold. [The cohort-audit guide](docs/cohort-audit.md) details the
 strict mapping, missing-evidence semantics, confidence intervals, and limits
 on causal interpretation.
 
+Compare multiple declared policies on those same holdouts and inspect a
+five-objective point-estimate Pareto frontier:
+
+```bash
+mosaicfeed compare-cohort-policies \
+  --articles examples/articles.json --events examples/events.json \
+  --cohorts examples/cohorts.json \
+  --plan examples/cohort-policy-plan.json \
+  --output cohort-policy-frontier.json
+```
+
+Missing calibration or a single cohort makes the affected frontier objectives
+undefined, not zero. See the [policy-frontier guide](docs/cohort-policy-frontier.md)
+for constraints, exact source hashes, tie handling, and limitations. The
+example remains synthetic, not an official benchmark or causal fairness claim.
+
 ## MIND dataset adapter
 
 MosaicFeed can convert locally obtained MIND `news.tsv` and `behaviors.tsv` files without downloading

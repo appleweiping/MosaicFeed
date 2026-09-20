@@ -6,6 +6,21 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.12.0] - 2026-09-20
+
+### Added
+
+- Added a bounded, opt-in declared-cohort policy comparison across 2–8
+  `FeedConfig` variants on the same temporal holdouts. It reports five
+  point-estimate objectives, explicit missing calibration evidence and hard
+  constraints, and a deterministic Pareto frontier with stable equal-vector
+  tie resolution.
+- Added a strict versioned CLI plan, exact raw-source and semantic hashes,
+  no-overwrite report publication, synthetic example, and independent
+  arithmetic, temporal-boundary, malformed-input, and cross-platform tests.
+  This is an observational offline comparison, not a causal fairness result
+  or an official MIND-small benchmark.
+
 ## [0.11.0] - 2026-09-19
 
 ### Added

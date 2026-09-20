@@ -36,6 +36,15 @@ from mosaicfeed.mind import MindEvaluationReport, evaluate_mind_impressions
 from mosaicfeed.models import Article, Event, EventKind, Feed, Recommendation, UserProfile
 from mosaicfeed.pairwise import PairwiseImpressionRanker, PairwiseTrainingSummary
 from mosaicfeed.pipeline import build_feed
+from mosaicfeed.policy_frontier import (
+    FrontierConstraints,
+    NamedPolicy,
+    PolicyFrontierPlan,
+    PolicyFrontierReport,
+    PolicyOutcome,
+    compare_cohort_policies,
+    write_frontier_report,
+)
 from mosaicfeed.server import (
     ClickRankService,
     RankResult,
@@ -64,6 +73,7 @@ __all__ = [
     "ExperimentRun",
     "Feed",
     "FeedConfig",
+    "FrontierConstraints",
     "IngestReport",
     "InteractionEvent",
     "LateEventError",
@@ -74,10 +84,14 @@ __all__ = [
     "MindDataset",
     "MindEvaluationReport",
     "MindImpression",
+    "NamedPolicy",
     "NewsTextEncoder",
     "PairwiseImpressionRanker",
     "PairwiseTrainingSummary",
     "PointwiseLogisticRanker",
+    "PolicyFrontierPlan",
+    "PolicyFrontierReport",
+    "PolicyOutcome",
     "ProfileEventStore",
     "RankResult",
     "Recommendation",
@@ -87,6 +101,7 @@ __all__ = [
     "audit_cohorts",
     "bootstrap_mean",
     "build_feed",
+    "compare_cohort_policies",
     "create_rank_server",
     "evaluate_mind_impressions",
     "fixed_offset",
@@ -99,6 +114,7 @@ __all__ = [
     "run_policy_benchmark",
     "verify_experiment_record",
     "write_experiment_record",
+    "write_frontier_report",
 ]
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
