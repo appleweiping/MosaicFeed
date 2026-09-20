@@ -12,6 +12,10 @@ the versioned plan. The reader validates internal structure and *all*
 checkpoint hashes/states before returning the selected model. Only replay with
 the exact source bytes verifies metric provenance and selection outcomes by
 rerunning training and comparing the complete canonical record byte-for-byte.
+The reader checks split-hash shape and work-bound range, but cannot establish
+that either matches the original rows without those source bytes. Record
+digests detect accidental edits; they are not signatures or an authenticity
+guarantee against someone able to rewrite the record.
 
 Run the tiny **hand-written synthetic example** from the repository root:
 
@@ -45,6 +49,11 @@ be after it; train IDs and validation IDs must be disjoint. Validation rows
 must have both clicked and unclicked candidates for AUC. No validation labels
 enter `.fit()`; only held-out IDs are passed to the model, while validation
 labels are used only for metrics after scores are produced.
+The caller must also ensure article `quality` and `popularity` values were
+known at each impression's timestamp. This runner checks article publication
+time but cannot infer when those derived features were computed; values
+aggregated from later interactions would leak future information into training
+or validation.
 
 This is a local model-selection demonstration, **not** an official MIND-small
 benchmark, general-purpose hyperparameter tuner, neural news encoder, or

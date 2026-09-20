@@ -379,6 +379,41 @@ def test_resigned_internal_inconsistency_is_rejected(tmp_path: Path, tamper: obj
         read_selected_checkpoint(path)
 
 
+@pytest.mark.parametrize(
+    "field, replacement",
+    [
+        ("split_sha256", {}),
+        ("split_sha256", {"train": "x" * 64, "validation": "0" * 64}),
+        ("work_units_upper_bound", True),
+        ("work_units_upper_bound", 0),
+        ("work_units_upper_bound", 20_000_001),
+    ],
+)
+def test_resigned_split_and_work_shape_rejected(
+    tmp_path: Path, field: str, replacement: object
+) -> None:
+    record = run_training_experiment(*_sources())
+    path = write_training_experiment_record(tmp_path, record)
+    altered = copy.deepcopy(record)
+    altered[field] = replacement
+    _resign(altered)
+    path.write_text(json.dumps(altered), encoding="utf-8")
+    with pytest.raises(ValueError):
+        read_selected_checkpoint(path)
+
+
+def test_reader_shape_check_is_not_source_replay(tmp_path: Path) -> None:
+    sources = _sources()
+    record = run_training_experiment(*sources)
+    path = write_training_experiment_record(tmp_path, record)
+    altered = copy.deepcopy(record)
+    altered["split_sha256"]["validation"] = "0" * 64
+    _resign(altered)
+    path.write_text(json.dumps(altered), encoding="utf-8")
+    assert read_selected_checkpoint(path).is_fitted
+    assert not verify_training_experiment_record(path, *sources)
+
+
 def test_metrics_and_nonselected_checkpoint_are_integrity_checked(tmp_path: Path) -> None:
     sources = _sources()
     record = run_training_experiment(*sources)

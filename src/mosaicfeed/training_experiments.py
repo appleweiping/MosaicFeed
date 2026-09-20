@@ -400,6 +400,19 @@ def read_selected_checkpoint(path: str | Path) -> Ranker:
     sources = record.get("source_sha256")
     if not isinstance(sources, dict) or set(sources) != {"articles", "train", "validation", "plan"}:
         raise ValueError("invalid source hashes")
+    split = record.get("split_sha256")
+    if (
+        not isinstance(split, dict)
+        or set(split) != {"train", "validation"}
+        or any(
+            not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None
+            for value in split.values()
+        )
+    ):
+        raise ValueError("invalid split hashes")
+    work = record.get("work_units_upper_bound")
+    if type(work) is not int or not 1 <= work <= MAX_WORK_UNITS:
+        raise ValueError("invalid work limit record")
     if record.get("experiment_id") != _sha(_canonical({"protocol": PROTOCOL, "sources": sources})):
         raise ValueError("experiment id does not match sources")
     selected = record.get("selected_candidate_id")
