@@ -83,6 +83,21 @@ def test_hand_auc_mrr_ndcg_with_masked_row_and_exact_source_hashes() -> None:
     assert "1 [" not in json.dumps(report)
 
 
+def test_hand_ndcg_cutoffs_include_rank_ten_but_exclude_rank_eleven() -> None:
+    # Four clicks are at ranks 1, 6, 10 and 11 among twelve candidates.
+    # The eight non-clicks are at 2-5, 7-9 and 12. Clicks therefore beat
+    # respectively 8, 4, 1 and 1 non-clicks in the pairwise AUC count.
+    truth = b"cutoff [1,0,0,0,0,1,0,0,0,1,1,0]\n"
+    prediction = b"cutoff [1,2,3,4,5,6,7,8,9,10,11,12]\n"
+    report = evaluate_mind_submission(truth, prediction)
+    ideal = sum(1 / math.log2(rank + 1) for rank in (1, 2, 3, 4))
+    assert report.auc == pytest.approx(14 / (4 * 8))
+    assert report.mrr == pytest.approx((1 + 1 / 6 + 1 / 10 + 1 / 11) / 4)
+    assert report.ndcg_5 == pytest.approx(1 / ideal)
+    assert report.ndcg_10 == pytest.approx((1 + 1 / math.log2(7) + 1 / math.log2(11)) / ideal)
+    assert report.ndcg_5 < report.ndcg_10 < 1
+
+
 def test_permutation_ranks_score_by_inverse_rank_not_source_order() -> None:
     report = evaluate_mind_submission(b"x [0,1,0,1]\n", b"x [3,1,4,2]\n")
     assert report.auc == 1.0
