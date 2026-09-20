@@ -82,6 +82,32 @@ jobs:
           assert result["model"]["training_history_lengths"]["train-3"] == 2
           PY
       - if: matrix.python-version == '3.11'
+        name: Run bounded neural-news selection smoke test
+        shell: bash
+        run: |
+          uv run --locked mosaicfeed run-neural-news-selection \
+            --articles examples/training_experiment_articles.json \
+            --train examples/neural_news_train.json \
+            --validation examples/neural_news_validation.json \
+            --plan examples/neural_news_selection_plan.json \
+            --registry neural-selection-smoke
+          uv run --locked python - <<'PY'
+          from pathlib import Path
+          from mosaicfeed.neural_news_selection import (
+              read_selected_neural_checkpoint, verify_neural_selection_record,
+          )
+          root = Path("examples")
+          record, = Path("neural-selection-smoke").glob("*.json")
+          assert read_selected_neural_checkpoint(record).config.dimension == 2
+          assert verify_neural_selection_record(
+              record,
+              (root / "training_experiment_articles.json").read_bytes(),
+              (root / "neural_news_train.json").read_bytes(),
+              (root / "neural_news_validation.json").read_bytes(),
+              (root / "neural_news_selection_plan.json").read_bytes(),
+          )
+          PY
+      - if: matrix.python-version == '3.11'
         run: >-
           uv run --locked mosaicfeed audit-cohorts --articles examples/articles.json
           --events examples/events.json --cohorts examples/cohorts.json
@@ -170,6 +196,7 @@ jobs:
           .ci-wheel-check/bin/mosaicfeed train-pairwise-model --help
           .ci-wheel-check/bin/mosaicfeed train-listwise-model --help
           .ci-wheel-check/bin/mosaicfeed run-neural-news --help
+          .ci-wheel-check/bin/mosaicfeed run-neural-news-selection --help
           .ci-wheel-check/bin/python -c "from mosaicfeed import PairwiseImpressionRanker; assert PairwiseImpressionRanker(epochs=1).is_fitted is False"
           .ci-wheel-check/bin/python -c "from mosaicfeed import ListwiseImpressionRanker; assert ListwiseImpressionRanker(epochs=1).is_fitted is False"
           .ci-wheel-check/bin/python -c "from mosaicfeed import NeuralNewsConfig; assert NeuralNewsConfig().dimension == 8"

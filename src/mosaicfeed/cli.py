@@ -53,6 +53,16 @@ from mosaicfeed.mind import (
     load_mind_scores,
 )
 from mosaicfeed.neural_news import NeuralNewsConfig, run_neural_news_experiment
+from mosaicfeed.neural_news_selection import (
+    MAX_PLAN_BYTES as MAX_NEURAL_SELECTION_PLAN_BYTES,
+)
+from mosaicfeed.neural_news_selection import (
+    MAX_SELECTION_SOURCE_BYTES as MAX_NEURAL_SELECTION_SOURCE_BYTES,
+)
+from mosaicfeed.neural_news_selection import (
+    run_neural_selection,
+    write_neural_selection_record,
+)
 from mosaicfeed.pairwise import PairwiseImpressionRanker
 from mosaicfeed.pipeline import build_feed
 from mosaicfeed.policy_frontier import (
@@ -362,6 +372,16 @@ def _parser() -> argparse.ArgumentParser:
     neural_news.add_argument("--seed", type=int, default=17)
     neural_news.add_argument("--max-vocabulary", type=int, default=2_048)
     neural_news.add_argument("--max-history", type=int, default=32)
+
+    neural_selection = subcommands.add_parser(
+        "run-neural-news-selection",
+        help="register a bounded train/dev neural-news checkpoint ablation",
+    )
+    neural_selection.add_argument("--articles", required=True)
+    neural_selection.add_argument("--train", required=True)
+    neural_selection.add_argument("--validation", required=True)
+    neural_selection.add_argument("--plan", required=True)
+    neural_selection.add_argument("--registry", required=True)
 
     cohort_audit = subcommands.add_parser(
         "audit-cohorts", help="compare declared user cohorts on temporal holdouts"
@@ -729,6 +749,28 @@ def _run(argv: Sequence[str] | None = None) -> int:
         )
         write_json(args.output, neural_record)
         print(f"wrote neural-news experiment to {args.output}")
+        return 0
+    if args.command == "run-neural-news-selection":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "train": args.train,
+                "validation": args.validation,
+                "plan": args.plan,
+                "registry": args.registry,
+            }
+        )
+        record = run_neural_selection(
+            read_experiment_source(args.articles, maximum=MAX_NEURAL_SELECTION_SOURCE_BYTES),
+            read_experiment_source(args.train, maximum=MAX_NEURAL_SELECTION_SOURCE_BYTES),
+            read_experiment_source(args.validation, maximum=MAX_NEURAL_SELECTION_SOURCE_BYTES),
+            read_experiment_source(args.plan, maximum=MAX_NEURAL_SELECTION_PLAN_BYTES),
+        )
+        try:
+            destination = write_neural_selection_record(args.registry, record)
+        except FileExistsError as error:
+            raise ValueError("neural-news selection is already registered") from error
+        print(f"registered neural-news selection {record['experiment_id']} to {destination}")
         return 0
     if args.command == "audit-cohorts":
         _require_distinct_paths(

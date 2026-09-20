@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "cutoff": "2026-01-04T00:00:00Z",
+  "baseline": {
+    "dimension": 4,
+    "epochs": 2,
+    "learning_rate": 0.1,
+    "seed": 17,
+    "max_vocabulary": 2048,
+    "max_history": 32
+  },
+  "ablations": [
+    {"id": "small-embedding", "field": "dimension", "value": 2},
+    {"id": "one-epoch", "field": "epochs", "value": 1},
+    {"id": "fast-step", "field": "learning_rate", "value": 0.2}
+  ],
+  "selection_metric": "ndcg@5",
+  "bootstrap_samples": 40,
+  "bootstrap_seed": 17
+}

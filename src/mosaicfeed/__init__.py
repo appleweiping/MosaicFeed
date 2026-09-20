@@ -35,6 +35,14 @@ from mosaicfeed.listwise import ListwiseImpressionRanker, ListwiseTrainingSummar
 from mosaicfeed.mind import MindEvaluationReport, evaluate_mind_impressions
 from mosaicfeed.models import Article, Event, EventKind, Feed, Recommendation, UserProfile
 from mosaicfeed.neural_news import NeuralNewsConfig, NeuralNewsRanker, run_neural_news_experiment
+from mosaicfeed.neural_news_selection import (
+    NeuralAblation,
+    NeuralSelectionPlan,
+    read_selected_neural_checkpoint,
+    run_neural_selection,
+    verify_neural_selection_record,
+    write_neural_selection_record,
+)
 from mosaicfeed.pairwise import PairwiseImpressionRanker, PairwiseTrainingSummary
 from mosaicfeed.pipeline import build_feed
 from mosaicfeed.policy_frontier import (
@@ -94,8 +102,10 @@ __all__ = [
     "MindEvaluationReport",
     "MindImpression",
     "NamedPolicy",
+    "NeuralAblation",
     "NeuralNewsConfig",
     "NeuralNewsRanker",
+    "NeuralSelectionPlan",
     "NewsTextEncoder",
     "PairwiseImpressionRanker",
     "PairwiseTrainingSummary",
@@ -124,15 +134,19 @@ __all__ = [
     "load_interaction_events",
     "load_mind",
     "read_selected_checkpoint",
+    "read_selected_neural_checkpoint",
     "run_ablation_experiment",
     "run_neural_news_experiment",
+    "run_neural_selection",
     "run_policy_benchmark",
     "run_training_experiment",
     "verify_experiment_record",
+    "verify_neural_selection_record",
     "verify_training_experiment_record",
     "write_experiment_record",
     "write_frontier_report",
+    "write_neural_selection_record",
     "write_training_experiment_record",
 ]
 
-__version__ = "0.14.0"
+__version__ = "0.15.0"

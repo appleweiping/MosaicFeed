@@ -343,6 +343,23 @@ mosaicfeed run-neural-news \
 This local CPU baseline is not NRMS or an official MIND reproduction. See the
 [model, temporal, and resource contract](docs/neural-news.md).
 
+To compare up to five one-factor variants against the same baseline using the
+same train/dev bytes, select a validation checkpoint and retain a replayable
+record:
+
+```bash
+mosaicfeed run-neural-news-selection \
+  --articles examples/training_experiment_articles.json \
+  --train examples/neural_news_train.json \
+  --validation examples/neural_news_validation.json \
+  --plan examples/neural_news_selection_plan.json \
+  --registry neural-selection-registry
+```
+
+The example is hand-written synthetic data, not an official benchmark.
+The [selection and provenance contract](docs/neural-news-selection.md) explains
+the work bound, paired diagnostics, checkpoint reader and exact-byte replay.
+
 ## Declared-cohort audit
 
 Compare utility, slate diversity, and pre-holdout topic calibration across

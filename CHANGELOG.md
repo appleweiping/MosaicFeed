@@ -6,6 +6,18 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.15.0] - 2026-09-20
+
+### Added
+
+- Bounded one-factor neural-news checkpoint selection over identical train/dev
+  bytes, deterministic validation-metric choice and per-impression paired
+  bootstrap diagnostics, with complete candidate states and source hashes.
+- Strict versioned plan, create-only content-addressed registry, internal state
+  checks and exact-source replay verification; adversarial schema, resource,
+  tamper, split-leakage and multi-metric regression tests, plus CLI/CI smoke.
+  These are local synthetic/caller-owned experiments, not official MIND scores.
+
 ## [0.14.0] - 2026-09-20
 
 ### Added
