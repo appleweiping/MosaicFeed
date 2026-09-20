@@ -33,6 +33,12 @@ from mosaicfeed.experiments import (
 from mosaicfeed.learning import ClickPrediction, PointwiseLogisticRanker
 from mosaicfeed.listwise import ListwiseImpressionRanker, ListwiseTrainingSummary
 from mosaicfeed.mind import MindEvaluationReport, evaluate_mind_impressions
+from mosaicfeed.mind_submission import (
+    MindSubmissionReport,
+    PreparedMindPredictions,
+    evaluate_mind_submission,
+    prepare_mind_predictions,
+)
 from mosaicfeed.models import Article, Event, EventKind, Feed, Recommendation, UserProfile
 from mosaicfeed.neural_news import NeuralNewsConfig, NeuralNewsRanker, run_neural_news_experiment
 from mosaicfeed.neural_news_selection import (
@@ -101,6 +107,7 @@ __all__ = [
     "MindDataset",
     "MindEvaluationReport",
     "MindImpression",
+    "MindSubmissionReport",
     "NamedPolicy",
     "NeuralAblation",
     "NeuralNewsConfig",
@@ -113,6 +120,7 @@ __all__ = [
     "PolicyFrontierPlan",
     "PolicyFrontierReport",
     "PolicyOutcome",
+    "PreparedMindPredictions",
     "ProfileEventStore",
     "RankResult",
     "Recommendation",
@@ -127,12 +135,14 @@ __all__ = [
     "compare_cohort_policies",
     "create_rank_server",
     "evaluate_mind_impressions",
+    "evaluate_mind_submission",
     "fixed_offset",
     "load_click_rank_service",
     "load_declared_cohorts",
     "load_event_store",
     "load_interaction_events",
     "load_mind",
+    "prepare_mind_predictions",
     "read_selected_checkpoint",
     "read_selected_neural_checkpoint",
     "run_ablation_experiment",
@@ -149,4 +159,4 @@ __all__ = [
     "write_training_experiment_record",
 ]
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"
