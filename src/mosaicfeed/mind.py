@@ -83,12 +83,10 @@ def _validate_impression_collection(impressions: Sequence[MindImpression]) -> No
         seen.add(impression.impression_id)
 
 
-def load_mind_impressions(path: str | Path) -> tuple[MindImpression, ...]:
-    """Load the strict JSON interchange form written by :func:`write_mind_impressions`."""
-
+def _impressions_from_records(records: Sequence[Mapping[str, Any]]) -> tuple[MindImpression, ...]:
     result: list[MindImpression] = []
     seen: set[str] = set()
-    for record in _records(path, "MIND impression"):
+    for record in records:
         _strict(record, {"impression_id", "user_id", "occurred_at", "candidates"}, "impression")
         raw_candidates = record["candidates"]
         if not isinstance(raw_candidates, list):
@@ -122,6 +120,26 @@ def load_mind_impressions(path: str | Path) -> tuple[MindImpression, ...]:
         seen.add(impression.impression_id)
         result.append(impression)
     return tuple(result)
+
+
+def load_mind_impressions(path: str | Path) -> tuple[MindImpression, ...]:
+    """Load the strict JSON interchange form written by :func:`write_mind_impressions`."""
+
+    return _impressions_from_records(_records(path, "MIND impression"))
+
+
+def load_mind_impressions_bytes(data: bytes) -> tuple[MindImpression, ...]:
+    """Parse one already-bounded immutable MIND impression JSON snapshot."""
+
+    if type(data) is not bytes:
+        raise ValueError("MIND impression snapshot must be bytes")
+    try:
+        parsed = load_json_text(data.decode("utf-8"))
+    except UnicodeDecodeError as error:
+        raise ValueError("MIND impression snapshot must be UTF-8") from error
+    if not isinstance(parsed, list) or not all(isinstance(row, dict) for row in parsed):
+        raise ValueError("MIND impression snapshot must be a list of objects")
+    return _impressions_from_records(parsed)
 
 
 def load_mind_scores(path: str | Path) -> dict[str, dict[str, float]]:

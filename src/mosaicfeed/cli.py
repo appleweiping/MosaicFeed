@@ -72,6 +72,16 @@ from mosaicfeed.server import (
 )
 from mosaicfeed.simulation import generate_synthetic
 from mosaicfeed.text_features import TextFeatureConfig
+from mosaicfeed.training_experiments import (
+    MAX_PLAN_BYTES as MAX_TRAINING_PLAN_BYTES,
+)
+from mosaicfeed.training_experiments import (
+    MAX_SOURCE_BYTES as MAX_TRAINING_SOURCE_BYTES,
+)
+from mosaicfeed.training_experiments import (
+    run_training_experiment,
+    write_training_experiment_record,
+)
 
 MAX_PAIRWISE_INPUT_BYTES = 64 * 1024 * 1024
 MAX_PAIRWISE_SCORE_BYTES = 256 * 1024 * 1024
@@ -326,6 +336,16 @@ def _parser() -> argparse.ArgumentParser:
     experiment.add_argument("--events", required=True)
     experiment.add_argument("--plan", required=True)
     experiment.add_argument("--registry", required=True)
+
+    training_experiment = subcommands.add_parser(
+        "run-training-experiment",
+        help="train bounded local pairwise/listwise candidates and select by validation metric",
+    )
+    training_experiment.add_argument("--articles", required=True)
+    training_experiment.add_argument("--train", required=True)
+    training_experiment.add_argument("--validation", required=True)
+    training_experiment.add_argument("--plan", required=True)
+    training_experiment.add_argument("--registry", required=True)
 
     cohort_audit = subcommands.add_parser(
         "audit-cohorts", help="compare declared user cohorts on temporal holdouts"
@@ -642,6 +662,30 @@ def _run(argv: Sequence[str] | None = None) -> int:
         except FileExistsError as error:
             raise ValueError(f"experiment {run.experiment_id} is already registered") from error
         print(f"registered experiment {run.experiment_id} to {destination}")
+        return 0
+    if args.command == "run-training-experiment":
+        _require_distinct_paths(
+            {
+                "articles": args.articles,
+                "train": args.train,
+                "validation": args.validation,
+                "plan": args.plan,
+                "registry": args.registry,
+            }
+        )
+        record = run_training_experiment(
+            read_experiment_source(args.articles, maximum=MAX_TRAINING_SOURCE_BYTES),
+            read_experiment_source(args.train, maximum=MAX_TRAINING_SOURCE_BYTES),
+            read_experiment_source(args.validation, maximum=MAX_TRAINING_SOURCE_BYTES),
+            read_experiment_source(args.plan, maximum=MAX_TRAINING_PLAN_BYTES),
+        )
+        try:
+            destination = write_training_experiment_record(args.registry, record)
+        except FileExistsError as error:
+            raise ValueError(
+                f"experiment {record['experiment_id']} is already registered"
+            ) from error
+        print(f"registered training experiment {record['experiment_id']} to {destination}")
         return 0
     if args.command == "audit-cohorts":
         _require_distinct_paths(

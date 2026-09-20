@@ -302,6 +302,27 @@ not checkpoint selection or a MIND-small result. See the
 [ablation registry contract](docs/ablation-registry.md) for plan names, bounds,
 provenance, and limitations.
 
+## Local training experiments
+
+For caller-owned MIND-shaped splits, `run-training-experiment` trains 2–8
+declared pairwise/listwise candidates on train only, evaluates the same
+post-cutoff validation impressions, and stores every checkpoint and metric in
+one no-overwrite, replay-verifiable record. The tiny bundled input is
+hand-written synthetic data, not an official MIND sample:
+
+```bash
+mosaicfeed run-training-experiment \
+  --articles examples/training_experiment_articles.json \
+  --train examples/training_experiment_train.json \
+  --validation examples/training_experiment_validation.json \
+  --plan examples/training_experiment_plan.json \
+  --registry scratch/training-experiment-registry
+```
+
+See the [training experiment contract](docs/training_experiments.md) for
+selection semantics, bounds, provenance, checkpoint loading, and limitations.
+It is not an official MIND benchmark or an untouched-test estimate.
+
 ## Declared-cohort audit
 
 Compare utility, slate diversity, and pre-holdout topic calibration across

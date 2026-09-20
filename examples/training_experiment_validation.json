@@ -1,0 +1,4 @@
+[
+  {"impression_id": "v1", "user_id": "u", "occurred_at": "2026-01-05T00:00:00Z", "candidates": [{"article_id": "a", "clicked": true}, {"article_id": "d", "clicked": false}]},
+  {"impression_id": "v2", "user_id": "v", "occurred_at": "2026-01-06T00:00:00Z", "candidates": [{"article_id": "b", "clicked": false}, {"article_id": "c", "clicked": true}]}
+]

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "cutoff": "2026-01-04T00:00:00Z",
+  "feature_config": {},
+  "selection_metric": "auc",
+  "candidates": [
+    {"id": "pairwise-2", "objective": "pairwise", "epochs": 2, "learning_rate": 0.2, "l2": 0.0, "seed": 5},
+    {"id": "listwise-2", "objective": "listwise", "epochs": 2, "learning_rate": 0.2, "l2": 0.0, "seed": 5}
+  ]
+}

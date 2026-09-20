@@ -53,6 +53,14 @@ from mosaicfeed.server import (
     load_click_rank_service,
 )
 from mosaicfeed.text_features import NewsTextEncoder, TextFeatureConfig
+from mosaicfeed.training_experiments import (
+    TrainingCandidate,
+    TrainingExperimentPlan,
+    read_selected_checkpoint,
+    run_training_experiment,
+    verify_training_experiment_record,
+    write_training_experiment_record,
+)
 
 __all__ = [
     "ABLATIONS",
@@ -97,6 +105,8 @@ __all__ = [
     "Recommendation",
     "ServingLimits",
     "TextFeatureConfig",
+    "TrainingCandidate",
+    "TrainingExperimentPlan",
     "UserProfile",
     "audit_cohorts",
     "bootstrap_mean",
@@ -110,11 +120,15 @@ __all__ = [
     "load_event_store",
     "load_interaction_events",
     "load_mind",
+    "read_selected_checkpoint",
     "run_ablation_experiment",
     "run_policy_benchmark",
+    "run_training_experiment",
     "verify_experiment_record",
+    "verify_training_experiment_record",
     "write_experiment_record",
     "write_frontier_report",
+    "write_training_experiment_record",
 ]
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"

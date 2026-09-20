@@ -6,6 +6,17 @@ All notable changes are recorded here. The format follows Keep a Changelog and v
 
 _No changes yet._
 
+## [0.13.0] - 2026-09-20
+
+### Added
+
+- Bounded local pairwise/listwise training experiments over caller-owned
+  MIND-shaped train/validation snapshots, with deterministic validation-metric
+  checkpoint selection, all-candidate state persistence, exact source and
+  semantic split fingerprints, replay verification, and no-overwrite CLI
+  registry publication. Bundled data are explicitly hand-written synthetic
+  examples; official MIND-small benchmark evidence remains open.
+
 ## [0.12.0] - 2026-09-20
 
 ### Added

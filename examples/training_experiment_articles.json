@@ -1,0 +1,6 @@
+[
+  {"id": "a", "title": "Grid stability", "topics": ["energy"], "source": "synthetic-a", "published_at": "2026-01-01T00:00:00Z", "quality": 0.9},
+  {"id": "b", "title": "Sports results", "topics": ["sports"], "source": "synthetic-b", "published_at": "2026-01-01T00:00:00Z", "quality": 0.1},
+  {"id": "c", "title": "Solar generation", "topics": ["energy"], "source": "synthetic-c", "published_at": "2026-01-01T00:00:00Z", "quality": 0.8},
+  {"id": "d", "title": "Match preview", "topics": ["sports"], "source": "synthetic-d", "published_at": "2026-01-01T00:00:00Z", "quality": 0.2}
+]
